@@ -1,0 +1,15 @@
+# QSL-Exporte und Seriendruck-Dateien (enthalten Daten Dritter)
+*.csv
+*.adi
+*.adif
+*.vcf
+
+# Python
+__pycache__/
+*.pyc
+
+# macOS
+.DS_Store
+
+# Word-Sperrdateien
+~$*
