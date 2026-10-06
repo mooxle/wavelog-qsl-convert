@@ -148,6 +148,29 @@ For every QSO with `QSL_SENT_VIA` = `D` the script also writes `<export>_umschla
 - **SSB:** `59` becomes R `5`, S `9`.
 - **Other modes** (CW, …): split the same way, and the raw value is kept.
 
+### Where the logic lives
+
+Rule of thumb: **the script decides what the data is, Word decides what is shown.** The CSV in between is plain text you can open and check.
+
+| Done by the Python script | Done by Word (IF fields in the templates) |
+|---|---|
+| Reading ADIF/CSV, converting units and formats (MHz, date parts, `HHMM`) | Hiding a line when its field is empty (rig, antenna, power, remark, parks) |
+| Splitting RST and formatting the FT8 report | Choosing which report to print: FT8 value or R/S (blank card); filling the third RST box and the FT8 hint only for FT8 (pre-printed card) |
+| Extracting `[antenna]` / `[rig]` from the comment | — |
+| Looking up POTA park names and filling `POTA_1` … `POTA_4` | Heading `PORTABLE - PARKS ON THE AIR`, the POTA logo and the `X` in the *Portable* box, all triggered by a filled `POTA_1` |
+| — | `PORTABLE` without POTA: comparing the QSO locator with your home locator |
+| Sorting (bureau by DARC prefix group, then direct) | — |
+| Translating `QSL_SENT_VIA` into `BUREAU` / `DIRECT` | Printing the `via …` marker; `TNX QSL` only when `TNX_QSL` is `X` |
+| Envelope addresses from QRZ.com, QSL manager detection | — |
+
+What that means in practice:
+
+- **Changing how something looks or when it appears** is done in Word. Press <kbd>Alt</kbd>+<kbd>F9</kbd> to see the conditions.
+- **Your home locator** lives only in the Word template (the *Portable* condition). The script does not know it.
+- **More than four parks** needs both sides: `--pota-slots N` in the script and matching lines in the template.
+- **Sorting** cannot be changed in Word; the cards print in the order of the CSV.
+- **Your own template** only needs the merge fields from the column reference below. None of the conditions are required.
+
 ---
 
 ## ⚙️ Options
