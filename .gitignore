@@ -2,6 +2,7 @@
 *.csv
 *.adi
 *.adif
+!examples/sample.adi
 *.vcf
 
 # Python
