@@ -203,4 +203,10 @@ A CSV export from Wavelog works too, but only contains power, locator, POTA and 
 - The script contacts `api.pota.app` (park names) and, only if you provide credentials, `xmldata.qrz.com` (addresses). Nothing else leaves your machine.
 - Not affiliated with Wavelog, DARC, Parks on the Air or QRZ.com.
 
+## 📄 License
+
+[MIT](LICENSE) for the script and the templates.
+
+The Parks on the Air logo in `QSL_Blanko.docx`, `umschlaege.docx` and the screenshot belongs to [Parks on the Air](https://parksontheair.com/) and is not covered by the MIT license. Remove or replace it if you do not take part in the programme. The bureau prefix grouping is based on the prefix list published by the DARC QSL bureau.
+
 73!
