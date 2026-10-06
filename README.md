@@ -1,198 +1,198 @@
 # 📮 wavelog-qsl-convert
 
-> From your Wavelog export to print-ready QSL cards — sorted for the bureau, with POTA parks, FT8 reports and envelopes for direct cards.
+> Vom Wavelog-Export zur druckfertigen QSL-Karte — fürs Büro sortiert, mit POTA-Parks, FT8-Rapporten und Umschlägen für Direktkarten.
 
-Filling in QSL cards by hand is slow, and a raw log export does not fit a card: frequency in Hz, dates as `2026-04-14`, FT8 reports that do not fit an RST box, POTA references without park names. This tool turns a [Wavelog](https://www.wavelog.org/) export (ADIF or CSV) into a clean mail-merge file and ships Word templates that print the cards for you.
+QSL-Karten von Hand auszufüllen dauert, und ein roher Log-Export passt nicht auf eine Karte: Frequenz in Hz, Datum als `2026-04-14`, FT8-Rapporte, die in kein RST-Kästchen passen, POTA-Referenzen ohne Parknamen. Dieses Tool macht aus einem [Wavelog](https://www.wavelog.org/)-Export (ADIF oder CSV) eine saubere Seriendruck-Datei und bringt Word-Vorlagen mit, die die Karten für dich drucken.
 
-![QSL card printed on blank card stock](docs/card-blank.png)
+![QSL-Karte, gedruckt auf Blanko-Karton](docs/card-blank.png)
 
-## ✨ What you get
+## ✨ Was du bekommst
 
-- **Print-ready cards from one command.** One CSV drives three Word templates: a full card back for blank stock, an overlay for pre-printed cards, and envelopes.
-- **Cards come out in bureau order.** Bureau cards are grouped by main prefix the way the DARC QSL bureau asks for them (USA by call area, including the W4/WA4 split), so the stack is sorted when it leaves the printer.
-- **Bureau and direct in one export.** Bureau cards print first, direct cards after, and every card carries a `via BUREAU` / `via DIRECT` marker.
-- **Envelopes for direct cards.** Postal addresses are looked up on QRZ.com, including QSL managers named in the `QSL_VIA` field. Envelope *n* matches card *n*.
-- **POTA aware.** Park names are fetched from the POTA API and printed next to the reference, up to four parks per QSO (n-fers). The card is marked *Portable* automatically.
-- **FT8 done right.** The SNR is printed as `-07 dB`, or spread over the three R/S/T boxes of a pre-printed card.
-- **Your actual location.** The card shows the locator you operated from, not just your home QTH.
-- **Rig and antenna on the card**, taken from two simple tags in the Wavelog comment.
-- **No dependencies.** One Python file, standard library only.
+- **Druckfertige Karten mit einem Befehl.** Eine CSV speist drei Word-Vorlagen: eine komplette Kartenrückseite für Blanko-Karten, einen Überdruck für vorgedruckte Karten und Umschläge.
+- **Karten in Büro-Reihenfolge.** Bureau-Karten sind nach Haupt-Prefix gebündelt, so wie das DARC-QSL-Büro sie haben will (USA nach Rufzeichengebiet, inklusive der Trennung W4/WA4). Der Stapel ist sortiert, wenn er aus dem Drucker kommt.
+- **Bureau und Direct in einem Export.** Erst kommen die Bureau-Karten, dann die Direktkarten, und jede Karte trägt den Marker `via BUREAU` bzw. `via DIRECT`.
+- **Umschläge für Direktkarten.** Die Postanschriften kommen von QRZ.com, auch die von QSL-Managern, die im Feld `QSL_VIA` genannt sind. Umschlag Nr. *n* gehört zu Karte Nr. *n*.
+- **POTA inklusive.** Die Parknamen kommen aus der POTA-API und stehen neben der Referenz, bis zu vier Parks pro QSO (n-fer). Die Karte wird automatisch als *Portable* markiert.
+- **FT8 richtig dargestellt.** Der SNR steht als `-07 dB` auf der Karte oder verteilt sich auf die drei R/S/T-Kästchen einer vorgedruckten Karte.
+- **Dein tatsächlicher Standort.** Die Karte zeigt den Locator, von dem aus du gefunkt hast, nicht nur dein Heimat-QTH.
+- **Rig und Antenne auf der Karte**, über zwei einfache Tags im Wavelog-Kommentar.
+- **Keine Abhängigkeiten.** Eine Python-Datei, nur Standardbibliothek.
 
 ---
 
 ## 🚀 Quick Start
 
-### 1. Requirements
+### 1. Voraussetzungen
 
-- Python 3.9 or newer (no extra packages)
-- Microsoft Word for the templates (tested with Word for Mac)
-- Optional: a QRZ.com account with XML data access, for envelope addresses
+- Python 3.9 oder neuer (keine Zusatzpakete)
+- Microsoft Word für die Vorlagen (getestet mit Word für Mac)
+- Optional: ein QRZ.com-Konto mit XML-Datenzugriff, für die Umschlag-Adressen
 
-### 2. Export your QSOs from Wavelog
+### 2. QSOs aus Wavelog exportieren
 
-Export the QSOs you want cards for as **ADIF** (recommended) or CSV, for example from Wavelog's QSL print queue. ADIF carries everything the cards need (power, your locator, POTA references, bureau/direct).
+Exportiere die QSOs, für die du Karten willst, als **ADIF** (empfohlen) oder CSV, zum Beispiel aus der QSL-Druckwarteschlange von Wavelog. ADIF enthält alles, was die Karten brauchen (Leistung, eigener Locator, POTA-Referenzen, Bureau/Direct).
 
-### 3. Convert
+### 3. Konvertieren
 
 ```bash
-python3 qsl_convert.py my-export.adi
+python3 qsl_convert.py mein-export.adi
 ```
 
 ```
-✓ 5 Einträge konvertiert → my-export_seriendruck.csv
+✓ 5 Einträge konvertiert → mein-export_seriendruck.csv
   Versand: BUREAU 4, DIRECT 1
 ```
 
-The result is `my-export_seriendruck.csv` next to your export. Want to try it first? A sample log is included:
+Das Ergebnis `mein-export_seriendruck.csv` liegt im aktuellen Verzeichnis. Zum Ausprobieren liegt ein Beispiel-Log bei:
 
 ```bash
 python3 qsl_convert.py examples/sample.adi --no-qrz
 ```
 
-### 4. Print with Word
+### 4. Mit Word drucken
 
-1. Open one of the templates (see [Templates](#-templates)).
-2. *Mailings → Select Recipients → Use an Existing List…* and pick the `_seriendruck.csv` file.
-3. *Preview Results* to page through the cards, then *Finish & Merge → Print Documents*.
+1. Eine der Vorlagen öffnen (siehe Abschnitt „Vorlagen“).
+2. *Sendungen → Empfänger auswählen → Vorhandene Liste verwenden…* und die `_seriendruck.csv` auswählen.
+3. Mit *Vorschau Ergebnisse* durch die Karten blättern, dann *Fertig stellen und zusammenführen → Dokumente drucken*.
 
-Word asks once whether it may read the data file. Answer *Yes*.
+Word fragt einmal, ob es die Datendatei lesen darf. Mit *Ja* bestätigen.
 
 ---
 
-## 🖨️ Templates
+## 🖨️ Vorlagen
 
-All templates are 5.5 × 3.5 inch (140 × 89 mm) and use the same CSV.
+Alle Vorlagen haben das Format 5,5 × 3,5 Zoll (140 × 89 mm) und nutzen dieselbe CSV.
 
-| Template | Use it for |
+| Vorlage | Wofür |
 |---|---|
-| `QSL_Blanko.docx` | **Blank card stock.** Prints the complete card back in one pass, black and grey only (made for a monochrome laser printer). |
-| `QSL_Seriendruck.docx` | **Pre-printed cards.** Prints only the QSO data into the boxes of an existing card. |
-| `umschlaege.docx` | **Envelopes** for direct cards, fed by the `_umschlaege.csv` file. |
+| `QSL_Blanko.docx` | **Blanko-Karten.** Druckt die komplette Rückseite in einem Durchgang, nur Schwarz und Grau (gemacht für einen Monochrom-Laserdrucker). |
+| `QSL_Seriendruck.docx` | **Vorgedruckte Karten.** Druckt nur die QSO-Daten in die Kästchen einer vorhandenen Karte. |
+| `umschlaege.docx` | **Umschläge** für Direktkarten, gespeist aus der Datei `_umschlaege.csv`. |
 
-### Blank card: `QSL_Blanko.docx`
+### Blanko-Karte: `QSL_Blanko.docx`
 
-- **Top left:** your call sign (taken from the log, so `S5/DL9XX` prints correctly), name, address and home QTH data.
-- **Top right:** room for a `VIA` manager and the `TO RADIO` box with the other station's call, the largest element on the card.
-- **QSO table:** date (`YYYY-MM-DD`), UTC, MHz, band, mode and report. The report shows `-07 dB` for FT8, `57` for SSB and the raw value otherwise.
-- **Location block:** the locator you operated from, then `PORTABLE - PARKS ON THE AIR` with the parks. Without POTA it shows `PORTABLE` when the locator differs from your home locator, and nothing when you were at home.
-- **Station block:** rig, power and antenna.
-- **Bottom right:** `PSE QSL` (plus `TNX QSL` when you already received a card), your greeting, and the `QSL via BUREAU` / `DIRECT` marker.
-- **POTA logo:** only printed for QSOs with a park reference.
+- **Oben links:** dein Rufzeichen (aus dem Log, damit auch `S5/DL9XX` stimmt), Name, Anschrift und die Daten des Heimat-QTH.
+- **Oben rechts:** Platz für einen `VIA`-Manager und die Box `TO RADIO` mit dem Rufzeichen der Gegenstation, dem größten Element der Karte.
+- **QSO-Tabelle:** Datum (`JJJJ-MM-TT`), UTC, MHz, Band, Mode und Rapport. Der Rapport zeigt bei FT8 `-07 dB`, bei SSB `57` und sonst den Rohwert.
+- **Standort-Block:** der Locator, von dem aus du gefunkt hast, darunter `PORTABLE - PARKS ON THE AIR` mit den Parks. Ohne POTA steht dort `PORTABLE`, wenn der Locator vom Heimat-Locator abweicht, und nichts, wenn du zu Hause warst.
+- **Stations-Block:** Rig, Leistung und Antenne.
+- **Unten rechts:** `PSE QSL` (plus `TNX QSL`, wenn du schon eine Karte bekommen hast), dein Gruß und der Marker `QSL via BUREAU` / `DIRECT`.
+- **POTA-Logo:** wird nur bei QSOs mit Park-Referenz gedruckt.
 
-### Pre-printed card: `QSL_Seriendruck.docx`
+### Vorgedruckte Karte: `QSL_Seriendruck.docx`
 
-![QSO data printed onto a pre-printed card](docs/card-preprinted.png)
+![QSO-Daten als Überdruck auf einer vorgedruckten Karte](docs/card-preprinted.png)
 
-Prints call sign, date, time, frequency, mode and report into fixed positions, plus an `X` in the *Portable* box for POTA QSOs and a block with parks, setup, power and locator. The positions match one specific card layout. For your own cards, move the tables in Word until they sit on your boxes.
+Druckt Rufzeichen, Datum, Zeit, Frequenz, Mode und Rapport an feste Positionen, dazu ein `X` im Kästchen *Portable* bei POTA-QSOs und einen Block mit Parks, Setup, Leistung und Locator. Die Positionen passen zu einem bestimmten Kartenlayout. Für deine eigenen Karten verschiebst du die Tabellen in Word, bis sie auf deinen Kästchen sitzen.
 
-### Make the templates yours
+### Vorlagen anpassen
 
-The templates ship with placeholder station data (`DL9XX`, `Max Mustermann`, `JO40XX`, `DOK X00`). Before the first print:
+Die Vorlagen enthalten Musterdaten (`DL9XX`, `Max Mustermann`, `JO40XX`, `DOK X00`). Vor dem ersten Druck:
 
-1. Replace name, address, home locator, DOK and zones with your own.
-2. In `QSL_Blanko.docx`, press <kbd>Alt</kbd>+<kbd>F9</kbd> to show field codes and replace `JO40XX*` in the *Portable* condition (bottom left) with your home locator.
-3. `QSL_Blanko.docx` uses the font *Avenir Next Condensed* (included with macOS). On other systems pick a condensed font, otherwise columns may get tight.
+1. Name, Anschrift, Heimat-Locator, DOK und Zonen durch deine eigenen ersetzen.
+2. In `QSL_Blanko.docx` mit <kbd>Alt</kbd>+<kbd>F9</kbd> die Feldfunktionen einblenden und `JO40XX*` in der *Portable*-Bedingung (unten links) durch deinen Heimat-Locator ersetzen.
+3. `QSL_Blanko.docx` nutzt die Schrift *Avenir Next Condensed* (bei macOS dabei). Auf anderen Systemen eine schmale Schrift wählen, sonst können die Spalten knapp werden.
 
 ---
 
-## 🧩 How the details work
+## 🧩 Wie die Details funktionieren
 
-### Rig and antenna
+### Rig und Antenne
 
-Put two tags into the Wavelog comment of a QSO:
+Zwei Tags im Wavelog-Kommentar eines QSOs:
 
 ```
 [antenna] Vertical Dipole - 4m high [rig] Yaesu FT-891
 ```
 
-They end up in the columns `ANTENNE`, `RIG` and `SETUP` (`Yaesu FT-891 · Vertical Dipole - 4m high`). Any text before the first tag stays in `BEMERKUNG` as a normal remark.
+Sie landen in den Spalten `ANTENNE`, `RIG` und `SETUP` (`Yaesu FT-891 · Vertical Dipole - 4m high`). Text vor dem ersten Tag bleibt als normale Bemerkung in `BEMERKUNG`.
 
 ### POTA
 
-- Several references (`DE-0021,DE-0200`) are supported; duplicates are dropped.
-- Names come from `https://api.pota.app/park/<REF>` with the park type appended, as shown on pota.app (`Wetterau Bird Sanctuary`). Each reference is queried once per run.
-- Word mail merge has no loops, so parks are written to fixed columns `POTA_1` … `POTA_4` (`DE-0021 – Bergstrasse-Odenwald Nature Park`); unused ones stay empty. `--pota-slots N` changes the number.
-- If a reference is unknown or the API is unreachable, you get a warning and the name stays empty. The conversion still completes.
+- Mehrere Referenzen (`DE-0021,DE-0200`) sind möglich, Duplikate entfallen.
+- Die Namen kommen von `https://api.pota.app/park/<REF>`, ergänzt um den Parktyp wie auf pota.app (`Wetterau Bird Sanctuary`). Jede Referenz wird pro Lauf nur einmal abgefragt.
+- Der Word-Seriendruck kennt keine Schleifen, deshalb stehen die Parks in festen Spalten `POTA_1` … `POTA_4` (`DE-0021 – Bergstrasse-Odenwald Nature Park`); unbenutzte bleiben leer. `--pota-slots N` ändert die Anzahl.
+- Ist eine Referenz unbekannt oder die API nicht erreichbar, gibt es eine Warnung und der Name bleibt leer. Die Konvertierung läuft trotzdem durch.
 
-### Sorting
+### Sortierung
 
-Sorting follows `QSL_SENT_VIA` from your log:
+Die Reihenfolge richtet sich nach `QSL_SENT_VIA` aus deinem Log:
 
-1. **Bureau (`B`)** first, grouped by main prefix, then by call sign.
-2. **Direct (`D`)**, by date and time.
-3. **Everything else**, by date and time.
+1. **Bureau (`B`)** zuerst, nach Haupt-Prefix gebündelt, dann nach Rufzeichen.
+2. **Direct (`D`)**, nach Datum und Uhrzeit.
+3. **Alles andere**, nach Datum und Uhrzeit.
 
-The bureau grouping uses the [prefix list of the DARC QSL bureau](https://www.darc.de/geschaeftsstelle/qsl-buero/) (edition 4/18), which is built into the script:
+Die Bündelung für das Büro folgt der [Prefix-Liste des DARC-QSL-Büros](https://www.darc.de/geschaeftsstelle/qsl-buero/) (Stand 4/18), die im Script hinterlegt ist:
 
-- All German prefixes (`DA`–`DR`) form the group `DL`.
-- USA is grouped by the digit in the call sign (`W0` … `W9`). Two letters before a 4 (`AA4`, `KA4`, `WA4`) go to `WA4`, the rest to `W4`.
-- Portable call signs count by home call: `LA/DL9XX/P` → `DL`.
-- The group is written to the column `DARC_GRUPPE`, handy for the band around each bundle.
-- Unknown prefixes go to the end of the bureau cards, with a warning.
+- Alle deutschen Prefixe (`DA`–`DR`) bilden die Gruppe `DL`.
+- USA wird nach der Zahl im Rufzeichen gruppiert (`W0` … `W9`). Zwei Buchstaben vor einer 4 (`AA4`, `KA4`, `WA4`) gehen an `WA4`, der Rest an `W4`.
+- Portable-Rufzeichen zählen nach dem Heimatrufzeichen: `LA/DL9XX/P` → `DL`.
+- Die Gruppe steht in der Spalte `DARC_GRUPPE`, praktisch für die Banderole um jedes Bündel.
+- Unbekannte Prefixe landen mit einer Warnung am Ende der Bureau-Karten.
 
-The list dates from 2018. Newer prefixes can be added to `DARC_PREFIXLISTE` in the script.
+Die Liste stammt von 2018. Neuere Prefixe lassen sich im Script in `DARC_PREFIXLISTE` nachtragen.
 
-### Envelopes for direct cards
+### Umschläge für Direktkarten
 
-For every QSO with `QSL_SENT_VIA` = `D` the script also writes `<export>_umschlaege.csv` with the postal address from the QRZ.com XML database.
+Für jedes QSO mit `QSL_SENT_VIA` = `D` schreibt das Script zusätzlich `<export>_umschlaege.csv` mit der Postanschrift aus der QRZ.com-XML-Datenbank.
 
-- **Credentials:** set `QRZ_USERNAME` and `QRZ_PASSWORD`, or let the script ask in the terminal. The password is not echoed and never stored. An empty password skips the step.
-- **QSL managers:** if `QSL_VIA` names another call sign (`QSL VIA ONLY KU9C`), the manager's address is used. Plain remarks such as `NO BURO, DIRECT only!` are ignored.
-- **Portable call signs** are looked up by home call (`OE1RDU/3` → `OE1RDU`).
-- **One row per QSO**, in the same order as the direct cards. Each call sign is queried only once.
-- **Missing addresses** are listed at the end and marked in the `Status` column.
+- **Zugangsdaten:** `QRZ_USERNAME` und `QRZ_PASSWORD` setzen oder das Script im Terminal fragen lassen. Das Passwort wird nicht angezeigt und nie gespeichert. Ein leeres Passwort überspringt den Schritt.
+- **QSL-Manager:** Nennt `QSL_VIA` ein anderes Rufzeichen (`QSL VIA ONLY KU9C`), wird die Adresse des Managers verwendet. Reine Hinweise wie `NO BURO, DIRECT only!` werden ignoriert.
+- **Portable-Rufzeichen** werden über das Heimatrufzeichen abgefragt (`OE1RDU/3` → `OE1RDU`).
+- **Eine Zeile pro QSO**, in derselben Reihenfolge wie die Direktkarten. Jedes Rufzeichen wird nur einmal abgefragt.
+- **Fehlende Adressen** listet das Script am Ende auf und markiert sie in der Spalte `Status`.
 
-### FT8 and RST
+### FT8 und RST
 
-- **FT8:** `RST_SENT_FT8` holds `-07 dB`. For pre-printed cards the three characters are also split into `RST_R` / `RST_S` / `RST_T` (`-`, `0`, `7`).
-- **SSB:** `59` becomes R `5`, S `9`.
-- **Other modes** (CW, …): split the same way, and the raw value is kept.
+- **FT8:** `RST_SENT_FT8` enthält `-07 dB`. Für vorgedruckte Karten werden die drei Zeichen zusätzlich auf `RST_R` / `RST_S` / `RST_T` verteilt (`-`, `0`, `7`).
+- **SSB:** `59` wird zu R `5`, S `9`.
+- **Andere Betriebsarten** (CW, …): werden genauso zerlegt, der Rohwert bleibt erhalten.
 
-### Where the logic lives
+### Wo welche Logik steckt
 
-Rule of thumb: **the script decides what the data is, Word decides what is shown.** The CSV in between is plain text you can open and check.
+Faustregel: **Das Script entscheidet, was die Daten sind, Word entscheidet, was angezeigt wird.** Die CSV dazwischen ist reiner Text, den du öffnen und prüfen kannst.
 
-| Done by the Python script | Done by Word (IF fields in the templates) |
+| Macht das Python-Script | Macht Word (Wenn-Felder in den Vorlagen) |
 |---|---|
-| Reading ADIF/CSV, converting units and formats (MHz, date parts, `HHMM`) | Hiding a line when its field is empty (rig, antenna, power, remark, parks) |
-| Splitting RST and formatting the FT8 report | Choosing which report to print: FT8 value or R/S (blank card); filling the third RST box and the FT8 hint only for FT8 (pre-printed card) |
-| Extracting `[antenna]` / `[rig]` from the comment | — |
-| Looking up POTA park names and filling `POTA_1` … `POTA_4` | Heading `PORTABLE - PARKS ON THE AIR`, the POTA logo and the `X` in the *Portable* box, all triggered by a filled `POTA_1` |
-| — | `PORTABLE` without POTA: comparing the QSO locator with your home locator |
-| Sorting (bureau by DARC prefix group, then direct) | — |
-| Translating `QSL_SENT_VIA` into `BUREAU` / `DIRECT` | Printing the `via …` marker; `TNX QSL` only when `TNX_QSL` is `X` |
-| Envelope addresses from QRZ.com, QSL manager detection | — |
+| ADIF/CSV lesen, Einheiten und Formate umrechnen (MHz, Datumsteile, `HHMM`) | Eine Zeile ausblenden, wenn ihr Feld leer ist (Rig, Antenne, Leistung, Bemerkung, Parks) |
+| RST zerlegen und den FT8-Rapport formatieren | Auswählen, welcher Rapport gedruckt wird: FT8-Wert oder R/S (Blanko-Karte); drittes RST-Kästchen und FT8-Hinweis nur bei FT8 (vorgedruckte Karte) |
+| `[antenna]` / `[rig]` aus dem Kommentar lösen | — |
+| POTA-Parknamen abfragen und `POTA_1` … `POTA_4` füllen | Überschrift `PORTABLE - PARKS ON THE AIR`, das POTA-Logo und das `X` im Kästchen *Portable*, jeweils ausgelöst durch ein gefülltes `POTA_1` |
+| — | `PORTABLE` ohne POTA: Vergleich des QSO-Locators mit deinem Heimat-Locator |
+| Sortierung (Bureau nach DARC-Gruppe, dann Direct) | — |
+| `QSL_SENT_VIA` in `BUREAU` / `DIRECT` übersetzen | Den Marker `via …` drucken; `TNX QSL` nur, wenn `TNX_QSL` = `X` |
+| Umschlag-Adressen von QRZ.com, QSL-Manager erkennen | — |
 
-What that means in practice:
+Was das praktisch heißt:
 
-- **Changing how something looks or when it appears** is done in Word. Press <kbd>Alt</kbd>+<kbd>F9</kbd> to see the conditions.
-- **Your home locator** lives only in the Word template (the *Portable* condition). The script does not know it.
-- **More than four parks** needs both sides: `--pota-slots N` in the script and matching lines in the template.
-- **Sorting** cannot be changed in Word; the cards print in the order of the CSV.
-- **Your own template** only needs the merge fields from the column reference below. None of the conditions are required.
+- **Wie etwas aussieht oder wann es erscheint**, änderst du in Word. <kbd>Alt</kbd>+<kbd>F9</kbd> zeigt die Bedingungen.
+- **Dein Heimat-Locator** steht nur in der Word-Vorlage (in der *Portable*-Bedingung). Das Script kennt ihn nicht.
+- **Mehr als vier Parks** brauchen beide Seiten: `--pota-slots N` im Script und passende Zeilen in der Vorlage.
+- **Die Sortierung** lässt sich in Word nicht ändern; die Karten werden in der Reihenfolge der CSV gedruckt.
+- **Eine eigene Vorlage** braucht nur die Seriendruckfelder aus der Spaltenreferenz unten. Keine der Bedingungen ist Pflicht.
 
 ---
 
-## ⚙️ Options
+## ⚙️ Optionen
 
 ```bash
-python3 qsl_convert.py <export.adi|export.csv> [output.csv] [options]
+python3 qsl_convert.py <export.adi|export.csv> [ausgabe.csv] [optionen]
 ```
 
-| Option | Effect |
+| Option | Wirkung |
 |---|---|
-| `--no-pota` | Do not query the POTA API for park names |
-| `--pota-slots N` | Number of `POTA_n` columns (default 4; extend the template to match) |
-| `--no-qrz` | Do not look up envelope addresses |
-| `--umschlaege FILE` | Output name for the envelope CSV |
-| `--qrz-delay SEC` | Pause between QRZ queries (default 1.0) |
+| `--no-pota` | Keine Parknamen bei der POTA-API abfragen |
+| `--pota-slots N` | Anzahl der Spalten `POTA_n` (Standard 4; die Vorlage muss dazu passen) |
+| `--no-qrz` | Keine Umschlag-Adressen abfragen |
+| `--umschlaege DATEI` | Ausgabename für die Umschlag-CSV |
+| `--qrz-delay SEK` | Pause zwischen QRZ-Abfragen (Standard 1.0) |
 
 <details>
-<summary><b>📋 Column reference</b></summary>
+<summary><b>📋 Spaltenreferenz</b></summary>
 
-Column names and console messages are German. The mail-merge CSV is UTF-8 with BOM, all fields quoted.
+Die Seriendruck-CSV ist UTF-8 mit BOM, alle Felder stehen in Anführungszeichen.
 
-| Source field | Column | Example |
+| Quellfeld | Spalte | Beispiel |
 |---|---|---|
 | `CALL` | `AN_RUFZEICHEN` | `W1AW` |
 | `STATION_CALLSIGN` | `EIGENES_CALL` | `DL9XX/P` |
@@ -202,34 +202,34 @@ Column names and console messages are German. The mail-merge CSV is UTF-8 with B
 | `BAND` | `BAND` | `20m` |
 | `MODE` | `BETRIEBSART` | `SSB` |
 | `RST_SENT` | `RST_SENT_FT8`, `RST_R`, `RST_S`, `RST_T` | `-07 dB`, `-`, `0`, `7` |
-| `QSL_RCVD` | `TNX_QSL` | `X` if received |
-| — | `PSE_QSL` | always `X` |
+| `QSL_RCVD` | `TNX_QSL` | `X`, wenn empfangen |
+| — | `PSE_QSL` | immer `X` |
 | `TX_PWR` | `LEISTUNG_W` | `100` |
 | `MY_GRIDSQUARE` | `EIGENER_LOCATOR` | `JN49EP` |
 | `MY_POTA_REF` | `POTA_REF`, `POTA_NAME`, `POTA_ANZAHL`, `POTA_1` … `POTA_4` | `DE-0021 – Bergstrasse-Odenwald Nature Park` |
 | `COMMENT` | `ANTENNE`, `RIG`, `SETUP`, `BEMERKUNG` | `Yaesu FT-891 · Vertical Dipole - 4m high` |
 | `QSL_SENT_VIA` | `VERSAND` | `BUREAU`, `DIRECT`, `ELECTRONIC`, `MANAGER` |
 | `CALL` | `DARC_GRUPPE` | `DL`, `JA`, `W1` |
-| `QSL_VIA`, `GRIDSQUARE`, `COUNTRY` | `QSL_VIA`, `GRIDSQUARE`, `ENTITY` | unchanged |
+| `QSL_VIA`, `GRIDSQUARE`, `COUNTRY` | `QSL_VIA`, `GRIDSQUARE`, `ENTITY` | unverändert |
 
-Envelope CSV (`;` separated): `Rufzeichen`, `Via_Rufzeichen`, `QRZ_Rufzeichen`, `Datum`, `Band`, `Vorname`, `Nachname`, `Adresse`, `Ort`, `Bundesland`, `PLZ`, `Land`, `Status`.
+Umschlag-CSV (Trennzeichen `;`): `Rufzeichen`, `Via_Rufzeichen`, `QRZ_Rufzeichen`, `Datum`, `Band`, `Vorname`, `Nachname`, `Adresse`, `Ort`, `Bundesland`, `PLZ`, `Land`, `Status`.
 
-A CSV export from Wavelog works too, but only contains power, locator, POTA and bureau/direct if those columns are part of the export. Missing fields never abort the run; the column just stays empty.
+Ein CSV-Export aus Wavelog funktioniert auch, enthält Leistung, Locator, POTA und Bureau/Direct aber nur, wenn diese Spalten Teil des Exports sind. Fehlende Felder brechen den Lauf nie ab; die Spalte bleibt dann leer.
 
 </details>
 
 ---
 
-## 🔒 Privacy and third-party services
+## 🔒 Datenschutz und fremde Dienste
 
-- Log exports and the generated CSV files contain call signs, remarks and postal addresses of other people. They are excluded from Git via `.gitignore`. Keep them out of public places.
-- The script contacts `api.pota.app` (park names) and, only if you provide credentials, `xmldata.qrz.com` (addresses). Nothing else leaves your machine.
-- Not affiliated with Wavelog, DARC, Parks on the Air or QRZ.com.
+- Log-Exporte und die erzeugten CSV-Dateien enthalten Rufzeichen, Bemerkungen und Postanschriften anderer Personen. Sie sind per `.gitignore` von Git ausgeschlossen. Lege sie nicht an öffentlichen Orten ab.
+- Das Script kontaktiert `api.pota.app` (Parknamen) und, nur wenn du Zugangsdaten angibst, `xmldata.qrz.com` (Adressen). Sonst verlässt nichts deinen Rechner.
+- Kein offizielles Projekt von Wavelog, DARC, Parks on the Air oder QRZ.com.
 
-## 📄 License
+## 📄 Lizenz
 
-[MIT](LICENSE) for the script and the templates.
+[MIT](LICENSE) für das Script und die Vorlagen.
 
-The Parks on the Air logo in `QSL_Blanko.docx`, `umschlaege.docx` and the screenshot belongs to [Parks on the Air](https://parksontheair.com/) and is not covered by the MIT license. Remove or replace it if you do not take part in the programme. The bureau prefix grouping is based on the prefix list published by the DARC QSL bureau.
+Das Parks-on-the-Air-Logo in `QSL_Blanko.docx`, `umschlaege.docx` und im Screenshot gehört [Parks on the Air](https://parksontheair.com/) und fällt nicht unter die MIT-Lizenz. Entferne oder ersetze es, wenn du nicht am Programm teilnimmst. Die Prefix-Bündelung für das Büro basiert auf der Prefix-Liste des DARC-QSL-Büros.
 
 73!
