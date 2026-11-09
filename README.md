@@ -226,6 +226,14 @@ Ein CSV-Export aus Wavelog funktioniert auch, enthält Leistung, Locator, POTA u
 - Das Script kontaktiert `api.pota.app` (Parknamen) und, nur wenn du Zugangsdaten angibst, `xmldata.qrz.com` (Adressen). Sonst verlässt nichts deinen Rechner.
 - Kein offizielles Projekt von Wavelog, DARC, Parks on the Air oder QRZ.com.
 
+## 🖥️ LogDeck
+
+In LogDeck, einer Mac-Oberfläche für diese Scripts, bekommt das Tool eine eigene Oberfläche
+(`logdeck.toml`): Fortschritt der POTA- und QRZ-Abfragen, die Karten in Druckreihenfolge, die Umschlag-Adressen und
+die fertigen CSV-Dateien zum Öffnen. Der QRZ.com-Login kommt dort aus den LogDeck-Einstellungen. `logdeck.py` ist
+der Helfer dafür – im Terminal tut er nichts, Ausgabe und CSV bleiben identisch. Die Datei ist eine Kopie aus dem
+LogDeck-Repo (`helper/logdeck.py`).
+
 ## 📄 Lizenz
 
 [MIT](LICENSE) für das Script und die Vorlagen.

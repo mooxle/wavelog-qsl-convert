@@ -63,6 +63,8 @@ import urllib.request
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
+import logdeck as ld  # Anzeige in LogDeck; im Terminal ohne Wirkung
+
 POTA_API = "https://api.pota.app/park/{}"
 POTA_SLOTS = 4      # Anzahl fester Spalten POTA_1 … POTA_n (muss zur Word-Vorlage passen)
 
@@ -535,10 +537,12 @@ def build_address_rows(direct_rows: list, client, delay: float = 1.0) -> list[di
                for r in direct_rows]
     unique = list(dict.fromkeys(t[0] for t in targets))
     print(f"  {len(unique)} eindeutige Rufzeichen werden bei QRZ abgefragt")
+    ld.step("Umschlag-Adressen bei QRZ.com abfragen", "run", id="qrz", detail=f"{len(unique)} Rufzeichen")
 
     cache, aborted, failures = {}, False, 0
     for idx, call in enumerate(unique, start=1):
         print(f"  [{idx}/{len(unique)}] QRZ: {call} ...", end=" ", flush=True)
+        ld.progress(idx - 1, len(unique), f"QRZ.com: {call}")
         try:
             data, err = client.lookup(call)
         except QRZError as e:
@@ -547,6 +551,7 @@ def build_address_rows(direct_rows: list, client, delay: float = 1.0) -> list[di
             failures += 1
             if "login" in str(e).lower() or "abo" in str(e).lower() or failures >= 2:
                 print("  ! Abbruch der Abfragen (Login-/Abo- oder Verbindungsproblem)")
+                ld.note(f"QRZ-Abfragen abgebrochen: {e}", "err")
                 aborted = True
                 break
             time.sleep(delay)
@@ -557,6 +562,9 @@ def build_address_rows(direct_rows: list, client, delay: float = 1.0) -> list[di
         cache[call] = (data, err)
         time.sleep(delay)
 
+    ld.progress(len(unique), len(unique), "QRZ.com fertig")
+    ld.step("Umschlag-Adressen bei QRZ.com abfragen", "err" if aborted else "ok", id="qrz",
+            detail="abgebrochen" if aborted else f"{len(unique)} Rufzeichen")
     fallback = (None, "nicht abgefragt (Abbruch)" if aborted else "unbekannter Fehler")
     return [address_row(lc, call, via, datum, band, *cache.get(lc, fallback))
             for lc, call, via, datum, band in targets]
@@ -572,7 +580,8 @@ def write_umschlaege(rows: list[dict], path: str):
 def qrz_credentials(rows: list):
     """Zugangsdaten aus QRZ_USERNAME/QRZ_PASSWORD, sonst interaktiv (nur im Terminal). Nie gespeichert."""
     user, pw = os.environ.get("QRZ_USERNAME"), os.environ.get("QRZ_PASSWORD")
-    if not (user and pw) and sys.stdin.isatty():
+    # In LogDeck kommen die Zugangsdaten aus den Einstellungen (Schlüsselbund), dort nicht nachfragen
+    if not (user and pw) and sys.stdin.isatty() and not ld.active():
         default = next((r.get("STATION_CALLSIGN", "").strip().upper()
                         for r in rows if r.get("STATION_CALLSIGN")), "")
         user = user or input(f"  QRZ.com Benutzername [{default}]: ").strip() or default
@@ -581,23 +590,37 @@ def qrz_credentials(rows: list):
 
 
 def make_umschlaege(rows: list, path: str, delay: float = 1.0):
+    """Schreibt die Umschlag-CSV. Liefert True (alle Adressen da), False (fehlende) oder None (keine Direct-Karten)."""
     direct = [r for r in rows if r.get("QSL_SENT_VIA", "").strip().upper() == "D"
               and r.get("CALL", "").strip()]
     if not direct:
-        return
+        return None
     print(f"\n{len(direct)} Direct-Karten → Umschlag-Adressen")
     creds = qrz_credentials(rows)
     if not creds:
         print("  ! Keine QRZ-Zugangsdaten (QRZ_USERNAME/QRZ_PASSWORD oder interaktiv im Terminal) "
               "– Umschlag-CSV übersprungen")
-        return
+        ld.note(f"{len(direct)} Direct-Karten, aber kein QRZ.com-Login – Umschlag-Adressen übersprungen. "
+                "Login in LogDeck unter Einstellungen → QRZ.com-Login eintragen.", "warn")
+        return False
     out = build_address_rows(direct, QRZClient(*creds), delay)
     write_umschlaege(out, path)
     n_ok = sum(1 for r in out if r["Status"] == "OK")
     print(f"✓ {n_ok} von {len(out)} Direct-Karten mit Adresse → {path}")
+    ld.stat("Mit Adresse", f"{n_ok}/{len(out)}", "ok" if n_ok == len(out) else "warn")
+    ld.table([{"key": "Rufzeichen", "label": "Rufzeichen", "mono": True},
+              {"key": "Name", "label": "Name"},
+              {"key": "Ort", "label": "Ort"},
+              {"key": "Status", "label": "Status"}],
+             [{"Rufzeichen": r["Rufzeichen"], "Name": f"{r.get('Vorname', '')} {r.get('Nachname', '')}".strip(),
+               "Ort": ", ".join(x for x in (r.get("Ort", ""), r.get("Land", "")) if x),
+               "Status": r["Status"], "_state": "ok" if r["Status"] == "OK" else "warn"} for r in out],
+             id="umschlaege", title="Umschlag-Adressen (Direct)")
+    ld.file(path, "Umschlag-Adressen")
     if n_ok < len(out):
         print("  ! Ohne Adresse (Spalte Status prüfen): "
               + ", ".join(r["Rufzeichen"] for r in out if r["Status"] != "OK"))
+    return n_ok == len(out)
 
 
 # --- Konvertierung ----------------------------------------------------------
@@ -606,12 +629,16 @@ def convert(input_path: str, output_path: str, lookup_pota: bool = True,
             pota_slots: int = POTA_SLOTS, umschlaege_path: str | None = None,
             qrz_delay: float = 1.0):
     rows = read_rows(input_path)
+    ld.step(f"{Path(input_path).name} lesen", "ok", id="read", detail=f"{len(rows)} QSOs")
 
     # Bureau (DARC-Reihenfolge) → Direct → Rest, siehe sort_key
     rows.sort(key=sort_key)
 
     out_rows = []
-    for r in rows:
+    if lookup_pota:
+        ld.step("POTA-Parknamen abfragen", "run", id="pota")
+    for n, r in enumerate(rows):
+        ld.progress(n, len(rows), f"{r.get('CALL', '').strip()} · {r.get('BAND', '').strip()} {r.get('MODE', '').strip()}")
         mode = r.get("MODE", "").strip().upper()
         rst  = r.get("RST_SENT", "").strip()
 
@@ -647,6 +674,8 @@ def convert(input_path: str, output_path: str, lookup_pota: bool = True,
             print(f"  ! {r.get('CALL', '?')} {r.get('DATE_ON', '')}: {len(pota_lines)} POTA-Referenzen, "
                   f"nur {pota_slots} Slots – überzählige entfallen in POTA_1…POTA_{pota_slots}",
                   file=sys.stderr)
+            ld.note(f"{r.get('CALL', '?')} {r.get('DATE_ON', '')}: {len(pota_lines)} POTA-Referenzen, "
+                    f"nur {pota_slots} Spalten in der Vorlage", "warn")
 
         out_rows.append({
             # Rufzeichen
@@ -701,6 +730,10 @@ def convert(input_path: str, output_path: str, lookup_pota: bool = True,
                for i in range(pota_slots)},
         })
 
+    ld.progress(len(rows), len(rows), "CSV schreiben")
+    if lookup_pota:
+        refs = {ref for o in out_rows for ref in o["POTA_REF"].split(", ") if ref}
+        ld.step("POTA-Parknamen abfragen", "ok", id="pota", detail=f"{len(refs)} Parks")
     fieldnames = list(out_rows[0].keys()) if out_rows else []
 
     with open(output_path, "w", newline="", encoding="utf-8-sig") as fout:
@@ -716,13 +749,32 @@ def convert(input_path: str, output_path: str, lookup_pota: bool = True,
         if o["VERSAND"] == "BUREAU" and not o["DARC_GRUPPE"]:
             print(f"  ! {o['AN_RUFZEICHEN']}: Prefix nicht in der DARC-Liste – steht am Ende der Bureau-Karten",
                   file=sys.stderr)
+            ld.note(f"{o['AN_RUFZEICHEN']}: Prefix nicht in der DARC-Liste – am Ende der Bureau-Karten", "warn")
 
     print(f"✓ {len(out_rows)} Einträge konvertiert → {output_path}")
     print("  Versand: " + ", ".join(f"{k} {v}" for k, v in counts.items()))
     print(f"  Felder: {', '.join(fieldnames)}")
 
-    if umschlaege_path:
-        make_umschlaege(rows, umschlaege_path, qrz_delay)
+    ld.stat("Karten", len(out_rows))
+    for k, v in counts.items():
+        ld.stat(k.capitalize() if k.isupper() else k, v)
+    ld.table([{"key": "call", "label": "Rufzeichen", "mono": True},
+              {"key": "date", "label": "Datum", "mono": True},
+              {"key": "band", "label": "Band"},
+              {"key": "mode", "label": "Mode"},
+              {"key": "via", "label": "Versand"},
+              {"key": "pota", "label": "POTA", "mono": True}],
+             [{"call": o["AN_RUFZEICHEN"], "date": f"{o['DATUM_T']}.{o['DATUM_M']}.{o['DATUM_J']}",
+               "band": o["BAND"], "mode": o["BETRIEBSART"], "via": o["VERSAND"], "pota": o["POTA_REF"]}
+              for o in out_rows], id="karten", title="Karten in Druckreihenfolge")
+    ld.file(output_path, "Seriendruck-CSV")
+
+    addresses = make_umschlaege(rows, umschlaege_path, qrz_delay) if umschlaege_path else None
+
+    if addresses is False:
+        ld.done(f"{len(out_rows)} Karten für den Seriendruck vorbereitet – Umschlag-Adressen unvollständig.", "warn")
+    else:
+        ld.done(f"{len(out_rows)} Karten für den Seriendruck vorbereitet.", "ok")
 
 
 if __name__ == "__main__":
