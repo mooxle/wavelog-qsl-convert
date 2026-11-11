@@ -841,8 +841,8 @@ if __name__ == "__main__":
                     help="nach dem PDF den Druckbefehl aus der Stationsdatei ausführen ([pdf] drucken); "
                          "schließt --pdf ein")
     ap.add_argument("--station", metavar="DATEI",
-                    default=str(Path(__file__).resolve().parent / "qsl_station.ini"),
-                    help="Stationsdaten für das PDF (Standard: qsl_station.ini neben dem Script)")
+                    help="Stationsdaten für das PDF (Standard: ~/.config/wavelog-qsl-convert/qsl_station.ini, "
+                         "sonst qsl_station.ini neben dem Script)")
     args = ap.parse_args()
     out = args.output or str(Path(args.input).stem + "_seriendruck.csv")
     if args.drucken and args.pdf is None:

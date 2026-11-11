@@ -51,13 +51,7 @@ python3 qsl_convert.py examples/sample.adi --no-qrz
 
 ### 4a. Direkt als PDF drucken (ohne Word)
 
-Einmalig die Stationsdaten eintragen:
-
-```bash
-cp qsl_station.example.ini qsl_station.ini
-```
-
-In `qsl_station.ini` Name, Anschrift, Heimat-Locator, DOK und Zonen anpassen. (Fehlt die Datei, legt `--pdf` sie beim ersten Lauf aus der Vorlage an.) Dann:
+Einmalig die Stationsdaten eintragen: Beim ersten Lauf mit `--pdf` legt das Script `~/.config/wavelog-qsl-convert/qsl_station.ini` aus der Vorlage `qsl_station.example.ini` an. Dort Name, Anschrift, Heimat-Locator, DOK und Zonen eintragen. Die Datei liegt im Benutzerordner, damit jede Kopie des Scripts sie findet (Terminal, LogDeck, Updates per `git pull`). Dann:
 
 ```bash
 python3 qsl_convert.py mein-export.adi --pdf
@@ -192,7 +186,7 @@ Für jedes QSO mit `QSL_SENT_VIA` = `D` schreibt das Script zusätzlich `<export
 `--pdf` zeichnet die Karten selbst (`qsl_pdf.py`), im Layout von `QSL_Blanko.docx`. Alles, was in Word die Wenn-Felder erledigen, macht hier das Script: Logo und Überschrift nur bei POTA, `PORTABLE` per Vergleich mit `home_locator`, Rapport je Betriebsart, `TNX QSL` nur bei empfangener Karte.
 
 - **Format:** 140 × 90 mm pro Seite (mit `rotate` auch hochkant 90 × 140 mm), Rand rund 5 mm, nur Schwarz und Grau.
-- **Stationsdaten** kommen aus `qsl_station.ini` (Vorlage: `qsl_station.example.ini`). Die Datei ist per `.gitignore` von Git ausgeschlossen.
+- **Stationsdaten** kommen aus `~/.config/wavelog-qsl-convert/qsl_station.ini` (Vorlage: `qsl_station.example.ini`); alternativ `qsl_station.ini` neben dem Script oder `--station DATEI`.
 - **Lange Einträge** (Rufzeichen, Parknamen, Antenne, Bemerkung) werden bis auf 65 % verkleinert und erst dann mit „…“ gekürzt.
 - **Schrift:** automatisch *Avenir Next Condensed* (macOS), sonst *Arial Narrow* (Windows mit Office, macOS) oder *DejaVu Sans Condensed* (Linux). Eine andere TrueType-Schrift lässt sich in der INI-Datei setzen.
 - **Logo:** `assets/pota_logo.png`, austauschbar über `logo` in der INI-Datei (8-Bit-PNG), leer lassen für kein Logo.
@@ -240,7 +234,7 @@ python3 qsl_convert.py <export.adi|export.csv> [ausgabe.csv] [optionen]
 | `--pdf [DATEI]` | Zusätzlich druckfertiges PDF, eine Karte pro Seite (Standard: `<export>_karten.pdf`) |
 | `--karte blanko\|vordruck` | Vorlage für das PDF: komplette Rückseite oder nur Daten auf vorgedruckte Karten (Standard: `vorlage` in `qsl_station.ini`, sonst `blanko`) |
 | `--drucken` | Nach dem PDF den eigenen Druckbefehl aus `qsl_station.ini` ausführen (`[pdf] drucken`), schließt `--pdf` ein |
-| `--station DATEI` | Stationsdaten für das PDF (Standard: `qsl_station.ini` neben dem Script) |
+| `--station DATEI` | Stationsdaten für das PDF (Standard: `~/.config/wavelog-qsl-convert/qsl_station.ini`, sonst `qsl_station.ini` neben dem Script) |
 
 <details>
 <summary><b>📋 Spaltenreferenz</b></summary>

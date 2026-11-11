@@ -51,12 +51,31 @@ class QslPdfError(Exception):
 
 # --- Stationsdaten ---------------------------------------------------------------------------
 
-def load_station(path: str) -> dict:
+SCRIPT_DIR = Path(__file__).resolve().parent
+# Fester Ort im Benutzerordner: gilt für jede Kopie des Scripts (Terminal, LogDeck, mehrere Klone)
+USER_STATION_FILE = Path("~/.config/wavelog-qsl-convert/qsl_station.ini").expanduser()
+
+
+def station_path(explicit: str | None = None) -> Path:
+    """
+    Stationsdatei: --station, sonst ~/.config/wavelog-qsl-convert/qsl_station.ini,
+    sonst qsl_station.ini neben dem Script. Gibt es keine, wird die im Benutzerordner angelegt.
+    """
+    if explicit:
+        return Path(explicit).expanduser()
+    for candidate in (USER_STATION_FILE, SCRIPT_DIR / "qsl_station.ini"):
+        if candidate.is_file():
+            return candidate
+    return USER_STATION_FILE
+
+
+def load_station(path: str | None = None) -> dict:
     """Liest die Stationsdaten. Pfade (Logo, Schriften) dürfen relativ zur INI-Datei sein."""
-    p = Path(path).expanduser()
+    p = station_path(path)
     if not p.is_file():
-        example = Path(__file__).resolve().parent / "qsl_station.example.ini"
-        if example.is_file() and p.parent.is_dir():
+        example = SCRIPT_DIR / "qsl_station.example.ini"
+        if example.is_file():
+            p.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(example, p)
             raise QslPdfError(f"Stationsdatei angelegt: {p} – bitte Name, Anschrift und Heimat-QTH "
                               f"eintragen und erneut starten.")
@@ -72,7 +91,8 @@ def load_station(path: str) -> dict:
         path_part, _, face = value.partition("#")
         q = Path(path_part).expanduser()
         if not q.is_absolute():
-            q = p.parent / q
+            # relativ zur INI-Datei, sonst zum Script (z. B. assets/pota_logo.png)
+            q = p.parent / q if (p.parent / q).exists() else SCRIPT_DIR / q
         return str(q) + (f"#{face}" if face else "")
 
     name = st.get("name", "").strip()
@@ -635,9 +655,9 @@ def find_fonts(st: dict, layout: str = "blanko"):
     raise QslPdfError("Keine passende Schrift gefunden – bitte 'font' und 'font_bold' in der Stationsdatei setzen.")
 
 
-def write_cards(rows: list, path: str, station_path: str, layout: str | None = None) -> int:
+def write_cards(rows: list, path: str, station_file: str | None, layout: str | None = None) -> int:
     """Schreibt eine Karte pro Zeile (Reihenfolge wie im CSV). Liefert die Anzahl der Seiten."""
-    st = load_station(station_path)
+    st = load_station(station_file)
     layout = (layout or st["layout"]).lower()
     if layout not in LAYOUTS:
         raise QslPdfError(f"Unbekannte Vorlage '{layout}' – erlaubt: {', '.join(LAYOUTS)}")
@@ -659,12 +679,12 @@ def write_cards(rows: list, path: str, station_path: str, layout: str | None = N
     return len(rows)
 
 
-def run_print_command(pdf_path: str, station_path: str) -> str:
+def run_print_command(pdf_path: str, station_file: str | None) -> str:
     """
     Führt den in der Stationsdatei unter [pdf] drucken eingetragenen Befehl aus ({pdf} = Datei).
     Das Script kennt keinen Drucker; ohne Eintrag passiert nichts. Liefert die Ausgabe des Befehls.
     """
-    command = load_station(station_path)["print_command"]
+    command = load_station(station_file)["print_command"]
     if not command:
         raise QslPdfError("Kein Druckbefehl konfiguriert – in der Stationsdatei unter [pdf] 'drucken' eintragen.")
     args = [a.replace("{pdf}", pdf_path) for a in shlex.split(command)]
