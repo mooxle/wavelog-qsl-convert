@@ -51,7 +51,7 @@ Verwendung:
   python3 qsl_convert.py qsl_export.csv [ausgabe.csv]
   python3 qsl_convert.py export.adi [ausgabe.csv] [--no-pota] [--pota-slots N]
                                     [--no-qrz] [--umschlaege DATEI] [--qrz-delay SEK]
-                                    [--pdf [DATEI]] [--drucken] [--station DATEI]
+                                    [--pdf [DATEI]] [--karte blanko|vordruck] [--drucken] [--station DATEI]
 """
 
 import argparse
@@ -631,12 +631,13 @@ def make_umschlaege(rows: list, path: str, delay: float = 1.0):
 
 # --- Konvertierung ----------------------------------------------------------
 
-def make_pdf(out_rows: list, pdf_path: str, station_path: str, run_print: bool = False) -> bool:
+def make_pdf(out_rows: list, pdf_path: str, station_path: str, run_print: bool = False,
+             layout: str | None = None) -> bool:
     """Druckfertiges PDF; Fehler brechen den Lauf nicht ab, die CSV ist dann trotzdem da."""
     import qsl_pdf
     ld.step("PDF erzeugen", "run", id="pdf")
     try:
-        n = qsl_pdf.write_cards(out_rows, pdf_path, station_path)
+        n = qsl_pdf.write_cards(out_rows, pdf_path, station_path, layout)
     except (qsl_pdf.QslPdfError, OSError, ValueError, KeyError) as e:
         print(f"  ! PDF nicht erzeugt: {e}", file=sys.stderr)
         ld.step("PDF erzeugen", "err", id="pdf", detail=str(e))
@@ -662,7 +663,8 @@ def make_pdf(out_rows: list, pdf_path: str, station_path: str, run_print: bool =
 def convert(input_path: str, output_path: str, lookup_pota: bool = True,
             pota_slots: int = POTA_SLOTS, umschlaege_path: str | None = None,
             qrz_delay: float = 1.0,
-            pdf_path: str | None = None, station_path: str | None = None, run_print: bool = False):
+            pdf_path: str | None = None, station_path: str | None = None, run_print: bool = False,
+            layout: str | None = None):
     rows = read_rows(input_path)
     ld.step(f"{Path(input_path).name} lesen", "ok", id="read", detail=f"{len(rows)} QSOs")
 
@@ -804,7 +806,7 @@ def convert(input_path: str, output_path: str, lookup_pota: bool = True,
               for o in out_rows], id="karten", title="Karten in Druckreihenfolge")
     ld.file(output_path, "Seriendruck-CSV")
 
-    pdf_ok = make_pdf(out_rows, pdf_path, station_path, run_print) if pdf_path else None
+    pdf_ok = make_pdf(out_rows, pdf_path, station_path, run_print, layout) if pdf_path else None
 
     addresses = make_umschlaege(rows, umschlaege_path, qrz_delay) if umschlaege_path else None
 
@@ -832,6 +834,9 @@ if __name__ == "__main__":
     ap.add_argument("--pdf", nargs="?", const="", metavar="DATEI",
                     help="zusätzlich druckfertiges PDF, eine Karte pro Seite, 140 × 90 mm "
                          "(Standard: <eingabe>_karten.pdf)")
+    ap.add_argument("--karte", choices=["blanko", "vordruck"],
+                    help="Vorlage für das PDF: blanko = komplette Rückseite, vordruck = nur QSO-Daten "
+                         "auf vorgedruckte Karten (Standard: [pdf] vorlage in der Stationsdatei, sonst blanko)")
     ap.add_argument("--drucken", action="store_true",
                     help="nach dem PDF den Druckbefehl aus der Stationsdatei ausführen ([pdf] drucken); "
                          "schließt --pdf ein")
@@ -846,4 +851,4 @@ if __name__ == "__main__":
     umschlaege = None if args.no_qrz else (args.umschlaege or str(Path(args.input).stem + "_umschlaege.csv"))
     convert(args.input, out, lookup_pota=not args.no_pota, pota_slots=args.pota_slots,
             umschlaege_path=umschlaege, qrz_delay=args.qrz_delay, pdf_path=pdf, station_path=args.station,
-            run_print=args.drucken)
+            run_print=args.drucken, layout=args.karte)

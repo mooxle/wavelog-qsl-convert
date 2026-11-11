@@ -58,6 +58,20 @@ help = "Eine Karte pro Seite im Layout der Blanko-Vorlage, direkt druckbar ohne 
 help_en = "One card per page in the blank-card layout, printable without Word. Station data from qsl_station.ini."
 
 [[param]]
+id = "karte"
+label = "Kartenvorlage"
+label_en = "Card template"
+type = "choice"
+flag = "--karte"
+default = "blanko"
+options = [
+  { value = "blanko", label = "Blanko-Karte (komplette Rückseite)", label_en = "Blank card (full back side)" },
+  { value = "vordruck", label = "Vorgedruckte Karte (nur QSO-Daten)", label_en = "Pre-printed card (QSO data only)" },
+]
+help = "Für das PDF: leere Karten komplett bedrucken oder nur die Daten auf vorgedruckte Karten."
+help_en = "For the PDF: print the whole card on blank stock, or only the data onto pre-printed cards."
+
+[[param]]
 id = "drucken"
 label = "Nach dem Erzeugen drucken"
 label_en = "Print after creating"

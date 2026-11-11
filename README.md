@@ -67,7 +67,12 @@ python3 qsl_convert.py mein-export.adi --pdf
 ✓ 5 Karten (140 × 90 mm) → mein-export_karten.pdf
 ```
 
-Das PDF enthält eine Karte pro Seite im Layout der Blanko-Vorlage, in derselben Reihenfolge wie die CSV (Bureau sortiert, dann Direct).
+Das PDF enthält eine Karte pro Seite, in derselben Reihenfolge wie die CSV (Bureau sortiert, dann Direct). Es gibt zwei Vorlagen:
+
+- **`--karte blanko`** (Standard): die komplette Rückseite für leere Karten, im Layout von `QSL_Blanko.docx`.
+- **`--karte vordruck`**: nur die QSO-Daten als Überdruck auf vorgedruckte Karten, an denselben Positionen wie `QSL_Seriendruck.docx` (Rufzeichen, Datum, Zeit, Frequenz, Mode, RST, `X` für Portable/PSE/TNX, Block mit Parks, Setup, Leistung und Locator). Passen die Positionen nicht zu deinen Karten, sind sie in `qsl_pdf.py` unter `OV_…` als Twips (1/1440 Zoll) hinterlegt.
+
+Die Standardvorlage lässt sich in `qsl_station.ini` mit `vorlage = …` festlegen.
 
 **Drucken:** Das PDF in einem beliebigen Programm öffnen (z. B. Vorschau) und mit **„Tatsächliche Größe“ bzw. 100 %** auf das eigene Kartenformat drucken. Am Vorschaubild im Druckdialog siehst du vorher, ob die Karte vollständig draufpasst.
 
@@ -233,6 +238,7 @@ python3 qsl_convert.py <export.adi|export.csv> [ausgabe.csv] [optionen]
 | `--umschlaege DATEI` | Ausgabename für die Umschlag-CSV |
 | `--qrz-delay SEK` | Pause zwischen QRZ-Abfragen (Standard 1.0) |
 | `--pdf [DATEI]` | Zusätzlich druckfertiges PDF, eine Karte pro Seite (Standard: `<export>_karten.pdf`) |
+| `--karte blanko\|vordruck` | Vorlage für das PDF: komplette Rückseite oder nur Daten auf vorgedruckte Karten (Standard: `vorlage` in `qsl_station.ini`, sonst `blanko`) |
 | `--drucken` | Nach dem PDF den eigenen Druckbefehl aus `qsl_station.ini` ausführen (`[pdf] drucken`), schließt `--pdf` ein |
 | `--station DATEI` | Stationsdaten für das PDF (Standard: `qsl_station.ini` neben dem Script) |
 

@@ -2,7 +2,8 @@
 qsl_pdf.py
 ==========
 Erzeugt aus den Zeilen von qsl_convert.py ein druckfertiges PDF mit einer QSL-Karte pro Seite
-(140 × 90 mm), im Layout von QSL_Blanko.docx. Nur Standardbibliothek: eigener kleiner PDF-Writer,
+(140 × 90 mm). Zwei Vorlagen: "blanko" (komplette Rückseite, Layout von QSL_Blanko.docx) und
+"vordruck" (nur die QSO-Daten als Überdruck auf vorgedruckte Karten, Positionen von QSL_Seriendruck.docx). Nur Standardbibliothek: eigener kleiner PDF-Writer,
 TrueType-Schriften werden vollständig eingebettet, das Logo (PNG) wird selbst dekodiert.
 
 Die Stationsdaten (Name, Anschrift, Heimat-Locator, DOK, Zonen) kommen aus einer INI-Datei,
@@ -25,7 +26,14 @@ TW = 1 / 20                       # Twips → Punkt (Layout ist aus der Word-Vor
 GRAY_TEXT, GRAY_FILL, GRAY_LINE = 0.35, 0.25, 0.25
 LINE_W = 0.75
 
+LAYOUTS = ("blanko", "vordruck")
+
 # Standard-Schriften, in dieser Reihenfolge gesucht: (regulär, fett), jeweils "Pfad" oder "Pfad#Schnitt"
+FONT_CANDIDATES_VORDRUCK = [
+    ("/System/Library/Fonts/Supplemental/Arial.ttf", "/System/Library/Fonts/Supplemental/Arial Bold.ttf"),
+    ("C:/Windows/Fonts/arial.ttf", "C:/Windows/Fonts/arialbd.ttf"),
+    ("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"),
+]
 FONT_CANDIDATES = [
     ("/System/Library/Fonts/Avenir Next Condensed.ttc#Avenir Next Condensed Regular",
      "/System/Library/Fonts/Avenir Next Condensed.ttc#Avenir Next Condensed Bold"),
@@ -81,6 +89,7 @@ def load_station(path: str) -> dict:
         "logo": rel(pdf.get("logo", "").strip()),
         "rotate": int(pdf.get("rotate", "0").strip() or 0) % 360,
         "print_command": pdf.get("drucken", "").strip(),
+        "layout": pdf.get("vorlage", "blanko").strip().lower() or "blanko",
     }
 
 
@@ -547,11 +556,75 @@ def draw_card(page: Page, r: dict, st: dict, logo: bool):
         page.line([("QSL via ", R, 7, GRAY_TEXT), (r["VERSAND"], B, 7, 0)], X_R + 80, y + 1200 + 60, 180, inner)
 
 
-def find_fonts(st: dict):
+# --- Überdruck auf vorgedruckte Karten (Positionen aus QSL_Seriendruck.docx, Twips) -----------
+
+OV_CALL = (5558, 1135, 1985, 567)                    # TO RADIO
+OV_PORTABLE = (1815, 228, 227, 227)                  # Kästchen „/p“: X bei POTA
+OV_X_FIXED = [(1419, 1532, 227, 227),                # Kästchen „Our QSO“ (immer X)
+              (4764, 2949, 227, 227)]                # Kästchen „PSE QSL“ (immer X)
+OV_TNX = (5784, 2949, 227, 227)                      # Kästchen „TNX QSL“: X, wenn Karte empfangen
+OV_ROW = (285, 2326, 454)                            # QSO-Zeile: x, y, Höhe
+OV_COLS = [479, 479, 479, 1498, 1498, 1498, 480, 480, 480]
+OV_INFO = (285, 3233, 4253, 1418)                    # Block links unten
+
+
+def draw_overlay(page: Page, r: dict):
+    R, B = "R", "B"
+    box = lambda b, runs: page.line(runs, b[0], b[1], b[3], b[2], "center")
+
+    if r.get("POTA_1"):
+        box(OV_PORTABLE, [("X", B, 10, 0)])
+    for b in OV_X_FIXED:
+        box(b, [("X", B, 10, 0)])
+    if r.get("TNX_QSL") == "X":
+        box(OV_TNX, [("X", B, 10, 0)])
+    box(OV_CALL, [(r["AN_RUFZEICHEN"], B, 18, 0)])
+
+    # QSO-Zeile: Tag/Monat/Jahr, UTC, MHz, Mode, R/S/T (bei FT8: Vorzeichen/Zehner/Einer)
+    x, y, h = OV_ROW
+    ft8 = r["BETRIEBSART"] == "FT8"
+    values = [(r["DATUM_T"], 10.5), (r["DATUM_M"], 10.5), (r["DATUM_J"], 10.5),
+              (r["UTC_ZEIT"], 18), (r["FREQUENZ"], 18), (r["BETRIEBSART"], 18),
+              (r["RST_R"], 18), (r["RST_S"], 18), (r["RST_T"] if ft8 else "", 18)]
+    for w, (value, size) in zip(OV_COLS, values):
+        page.line([(value, B, size, 0)], x, y, h, w, "center")
+        x += w
+
+    # Block links unten: wie in Word bleiben leere Zeilen weg, der Rest steht senkrecht mittig
+    lines = []
+    hint = [("FT-8 · Report = SNR in dB", R, 6.5, GRAY_TEXT)] if ft8 else []
+    via = [("via ", B, 7, 0), (r["VERSAND"], B, 7, 0)] if r["VERSAND"] else []
+    if hint or via:
+        lines.append((hint, via, 180, 40))
+    for i in range(1, 5):
+        if r.get(f"POTA_{i}"):
+            lines.append(([(r[f"POTA_{i}"], B, 7, 0)], [], 180, 0))
+    if r["SETUP"]:
+        lines.append(([("Setup: ", B, 7, 0), (r["SETUP"], R, 6.5, 0)], [], 180, 0))
+    pwr_loc = []
+    if r["LEISTUNG_W"]:
+        pwr_loc += [("Power (W): ", B, 7, 0), (r["LEISTUNG_W"], R, 6.5, 0), ("    ", R, 6.5, 0)]
+    if r["EIGENER_LOCATOR"]:
+        pwr_loc += [("Loc: ", B, 7, 0), (r["EIGENER_LOCATOR"], R, 6.5, 0)]
+    if pwr_loc:
+        lines.append((pwr_loc, [], 180, 0))
+
+    bx, by, bw, bh = OV_INFO
+    y = by + (bh - sum(lh + after for _, _, lh, after in lines)) / 2
+    for left, right, lh, after in lines:
+        right_w = page.width(right) / TW if right else 0
+        if left:
+            page.line(left, bx, y, lh, bw - right_w - 100)
+        if right:
+            page.line(right, bx, y, lh, bw, "right")
+        y += lh + after
+
+
+def find_fonts(st: dict, layout: str = "blanko"):
     if st["font"]:
         candidates = [(st["font"], st["font_bold"] or st["font"])]
     else:
-        candidates = FONT_CANDIDATES
+        candidates = FONT_CANDIDATES_VORDRUCK if layout == "vordruck" else FONT_CANDIDATES
     for regular, bold in candidates:
         if all(os.path.isfile(spec.partition("#")[0]) for spec in (regular, bold)):
             try:
@@ -562,10 +635,13 @@ def find_fonts(st: dict):
     raise QslPdfError("Keine passende Schrift gefunden – bitte 'font' und 'font_bold' in der Stationsdatei setzen.")
 
 
-def write_cards(rows: list, path: str, station_path: str) -> int:
+def write_cards(rows: list, path: str, station_path: str, layout: str | None = None) -> int:
     """Schreibt eine Karte pro Zeile (Reihenfolge wie im CSV). Liefert die Anzahl der Seiten."""
     st = load_station(station_path)
-    regular, bold = find_fonts(st)
+    layout = (layout or st["layout"]).lower()
+    if layout not in LAYOUTS:
+        raise QslPdfError(f"Unbekannte Vorlage '{layout}' – erlaubt: {', '.join(LAYOUTS)}")
+    regular, bold = find_fonts(st, layout)
     pdf = PdfWriter(st["rotate"])
     pdf.register_font("R", regular)
     pdf.register_font("B", bold)
@@ -574,7 +650,10 @@ def write_cards(rows: list, path: str, station_path: str) -> int:
         pdf.register_image("Logo", st["logo"])
     for r in rows:
         page = Page(pdf)
-        draw_card(page, r, st, logo)
+        if layout == "vordruck":
+            draw_overlay(page, r)
+        else:
+            draw_card(page, r, st, logo)
         page.finish()
     pdf.save(path)
     return len(rows)
