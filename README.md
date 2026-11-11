@@ -8,7 +8,7 @@ QSL-Karten von Hand auszufüllen dauert, und ein roher Log-Export passt nicht au
 
 ## ✨ Was du bekommst
 
-- **Druckfertige Karten mit einem Befehl.** Eine CSV speist drei Word-Vorlagen: eine komplette Kartenrückseite für Blanko-Karten, einen Überdruck für vorgedruckte Karten und Umschläge.
+- **Druckfertige Karten mit einem Befehl.** Mit `--pdf` entsteht direkt ein PDF mit einer Karte pro Seite (140 × 90 mm), ganz ohne Word. Wer lieber in Word arbeitet: Eine CSV speist drei Vorlagen, für Blanko-Karten, für vorgedruckte Karten und für Umschläge.
 - **Karten in Büro-Reihenfolge.** Bureau-Karten sind nach Haupt-Prefix gebündelt, so wie das DARC-QSL-Büro sie haben will (USA nach Rufzeichengebiet, inklusive der Trennung W4/WA4). Der Stapel ist sortiert, wenn er aus dem Drucker kommt.
 - **Bureau und Direct in einem Export.** Erst kommen die Bureau-Karten, dann die Direktkarten, und jede Karte trägt den Marker `via BUREAU` bzw. `via DIRECT`.
 - **Umschläge für Direktkarten.** Die Postanschriften kommen von QRZ.com, auch die von QSL-Managern, die im Feld `QSL_VIA` genannt sind. Umschlag Nr. *n* gehört zu Karte Nr. *n*.
@@ -49,7 +49,41 @@ Das Ergebnis `mein-export_seriendruck.csv` liegt im aktuellen Verzeichnis. Zum A
 python3 qsl_convert.py examples/sample.adi --no-qrz
 ```
 
-### 4. Mit Word drucken
+### 4a. Direkt als PDF drucken (ohne Word)
+
+Einmalig die Stationsdaten eintragen:
+
+```bash
+cp qsl_station.example.ini qsl_station.ini
+```
+
+In `qsl_station.ini` Name, Anschrift, Heimat-Locator, DOK und Zonen anpassen. (Fehlt die Datei, legt `--pdf` sie beim ersten Lauf aus der Vorlage an.) Dann:
+
+```bash
+python3 qsl_convert.py mein-export.adi --pdf
+```
+
+```
+✓ 5 Karten (140 × 90 mm) → mein-export_karten.pdf
+```
+
+Das PDF enthält eine Karte pro Seite im Layout der Blanko-Vorlage, in derselben Reihenfolge wie die CSV (Bureau sortiert, dann Direct).
+
+**Drucken:** Das PDF in einem beliebigen Programm öffnen (z. B. Vorschau) und mit **„Tatsächliche Größe“ bzw. 100 %** auf das eigene Kartenformat drucken. Am Vorschaubild im Druckdialog siehst du vorher, ob die Karte vollständig draufpasst.
+
+Zieht dein Drucker die Karte hochkant ein (kurze Seite voraus), stelle in `qsl_station.ini` unter `[pdf]` `rotate = 90` ein. Das PDF hat dann Seiten im Hochformat 90 × 140 mm mit gedrehtem Inhalt, also genau so, wie die Karte durch den Drucker läuft. Steht der Druck auf dem Kopf, `rotate = 270` nehmen.
+
+**Direkt drucken (optional):** Wer immer gleich druckt, trägt in `qsl_station.ini` unter `[pdf]` einen eigenen Druckbefehl ein (`drucken = …`, `{pdf}` steht für die Datei) und startet mit `--drucken`. Das Script kennt keinen Drucker und führt nur diesen Befehl aus; ohne Eintrag passiert nichts.
+
+**Tipp bei AirPrint-Druckern:** Manche Drucker verkleinern eine Seite von sich aus, wenn sie nicht genau zum eingezogenen Papier passt, auch wenn im Druckdialog 100 % eingestellt ist. Dann hilft es, das Format und „keine Skalierung“ direkt mitzugeben, unter macOS und Linux zum Beispiel so (Druckername mit `lpstat -p`):
+
+```bash
+lp -d <Drucker> -o media=Custom.90x140mm -o print-scaling=none -o InputSlot=by-pass-tray mein-export_karten.pdf
+```
+
+`media` passend zu `rotate` wählen (`90x140mm` hochkant, `140x90mm` quer); `InputSlot` hängt vom Drucker ab. Genau diese Zeile (mit `{pdf}` statt Dateiname) eignet sich als `drucken =` in der Stationsdatei.
+
+### 4b. Mit Word drucken
 
 1. Eine der Vorlagen öffnen (siehe Abschnitt „Vorlagen“).
 2. *Sendungen → Empfänger auswählen → Vorhandene Liste verwenden…* und die `_seriendruck.csv` auswählen.
@@ -148,9 +182,21 @@ Für jedes QSO mit `QSL_SENT_VIA` = `D` schreibt das Script zusätzlich `<export
 - **SSB:** `59` wird zu R `5`, S `9`.
 - **Andere Betriebsarten** (CW, …): werden genauso zerlegt, der Rohwert bleibt erhalten.
 
+### Das PDF ohne Word
+
+`--pdf` zeichnet die Karten selbst (`qsl_pdf.py`), im Layout von `QSL_Blanko.docx`. Alles, was in Word die Wenn-Felder erledigen, macht hier das Script: Logo und Überschrift nur bei POTA, `PORTABLE` per Vergleich mit `home_locator`, Rapport je Betriebsart, `TNX QSL` nur bei empfangener Karte.
+
+- **Format:** 140 × 90 mm pro Seite (mit `rotate` auch hochkant 90 × 140 mm), Rand rund 5 mm, nur Schwarz und Grau.
+- **Stationsdaten** kommen aus `qsl_station.ini` (Vorlage: `qsl_station.example.ini`). Die Datei ist per `.gitignore` von Git ausgeschlossen.
+- **Lange Einträge** (Rufzeichen, Parknamen, Antenne, Bemerkung) werden bis auf 65 % verkleinert und erst dann mit „…“ gekürzt.
+- **Schrift:** automatisch *Avenir Next Condensed* (macOS), sonst *Arial Narrow* (Windows mit Office, macOS) oder *DejaVu Sans Condensed* (Linux). Eine andere TrueType-Schrift lässt sich in der INI-Datei setzen.
+- **Logo:** `assets/pota_logo.png`, austauschbar über `logo` in der INI-Datei (8-Bit-PNG), leer lassen für kein Logo.
+- **Keine Zusatzpakete:** Der PDF-Writer ist Teil des Scripts und nutzt nur die Python-Standardbibliothek.
+- Klappt das PDF nicht (z. B. fehlende Stationsdatei), gibt es eine Fehlermeldung; die CSV entsteht trotzdem.
+
 ### Wo welche Logik steckt
 
-Faustregel: **Das Script entscheidet, was die Daten sind, Word entscheidet, was angezeigt wird.** Die CSV dazwischen ist reiner Text, den du öffnen und prüfen kannst.
+Für den Weg über Word gilt die Faustregel: **Das Script entscheidet, was die Daten sind, Word entscheidet, was angezeigt wird.** Die CSV dazwischen ist reiner Text, den du öffnen und prüfen kannst.
 
 | Macht das Python-Script | Macht Word (Wenn-Felder in den Vorlagen) |
 |---|---|
@@ -186,6 +232,9 @@ python3 qsl_convert.py <export.adi|export.csv> [ausgabe.csv] [optionen]
 | `--no-qrz` | Keine Umschlag-Adressen abfragen |
 | `--umschlaege DATEI` | Ausgabename für die Umschlag-CSV |
 | `--qrz-delay SEK` | Pause zwischen QRZ-Abfragen (Standard 1.0) |
+| `--pdf [DATEI]` | Zusätzlich druckfertiges PDF, eine Karte pro Seite (Standard: `<export>_karten.pdf`) |
+| `--drucken` | Nach dem PDF den eigenen Druckbefehl aus `qsl_station.ini` ausführen (`[pdf] drucken`), schließt `--pdf` ein |
+| `--station DATEI` | Stationsdaten für das PDF (Standard: `qsl_station.ini` neben dem Script) |
 
 <details>
 <summary><b>📋 Spaltenreferenz</b></summary>
@@ -223,6 +272,7 @@ Ein CSV-Export aus Wavelog funktioniert auch, enthält Leistung, Locator, POTA u
 ## 🔒 Datenschutz und fremde Dienste
 
 - Log-Exporte und die erzeugten CSV-Dateien enthalten Rufzeichen, Bemerkungen und Postanschriften anderer Personen. Sie sind per `.gitignore` von Git ausgeschlossen. Lege sie nicht an öffentlichen Orten ab.
+- Die Stationsdaten in `qsl_station.ini` (Name, Anschrift) bleiben lokal und sind von Git ausgeschlossen.
 - Das Script kontaktiert `api.pota.app` (Parknamen) und, nur wenn du Zugangsdaten angibst, `xmldata.qrz.com` (Adressen). Sonst verlässt nichts deinen Rechner.
 - Kein offizielles Projekt von Wavelog, DARC, Parks on the Air oder QRZ.com.
 
@@ -238,6 +288,6 @@ LogDeck-Repo (`helper/logdeck.py`).
 
 [MIT](LICENSE) für das Script und die Vorlagen.
 
-Das Parks-on-the-Air-Logo in `QSL_Blanko.docx`, `umschlaege.docx` und im Screenshot gehört [Parks on the Air](https://parksontheair.com/) und fällt nicht unter die MIT-Lizenz. Entferne oder ersetze es, wenn du nicht am Programm teilnimmst. Die Prefix-Bündelung für das Büro basiert auf der Prefix-Liste des DARC-QSL-Büros.
+Das Parks-on-the-Air-Logo in `assets/pota_logo.png`, `QSL_Blanko.docx`, `umschlaege.docx` und im Screenshot gehört [Parks on the Air](https://parksontheair.com/) und fällt nicht unter die MIT-Lizenz. Entferne oder ersetze es, wenn du nicht am Programm teilnimmst. Die Prefix-Bündelung für das Büro basiert auf der Prefix-Liste des DARC-QSL-Büros.
 
 73!

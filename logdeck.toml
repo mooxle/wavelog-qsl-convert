@@ -5,8 +5,8 @@ schema = 1
 [tool]
 name = "QSL-Seriendruck"
 name_en = "QSL mail merge"
-summary = "Macht aus dem QSL-Export von Wavelog die CSV für den Word-Seriendruck – mit POTA-Parknamen und Umschlag-Adressen von QRZ.com."
-summary_en = "Turns Wavelog's QSL export into a CSV for Word mail merge, with POTA park names and envelope addresses from QRZ.com."
+summary = "Macht aus dem QSL-Export von Wavelog druckfertige QSL-Karten (PDF) und die CSV für den Word-Seriendruck – mit POTA-Parknamen und Umschlag-Adressen von QRZ.com."
+summary_en = "Turns Wavelog's QSL export into print-ready QSL cards (PDF) and a CSV for Word mail merge, with POTA park names and envelope addresses from QRZ.com."
 icon = "card"
 group = "QSL"
 
@@ -48,6 +48,26 @@ help = "Für Direct-Karten. Nutzt den QRZ.com-Login aus den Einstellungen."
 help_en = "For direct cards. Uses the QRZ.com login from the settings."
 
 [[param]]
+id = "pdf"
+label = "Druckfertiges PDF (140 × 90 mm)"
+label_en = "Print-ready PDF (140 × 90 mm)"
+type = "bool"
+flag = "--pdf"
+default = true
+help = "Eine Karte pro Seite im Layout der Blanko-Vorlage, direkt druckbar ohne Word. Stationsdaten aus qsl_station.ini."
+help_en = "One card per page in the blank-card layout, printable without Word. Station data from qsl_station.ini."
+
+[[param]]
+id = "drucken"
+label = "Nach dem Erzeugen drucken"
+label_en = "Print after creating"
+type = "bool"
+flag = "--drucken"
+default = false
+help = "Führt den Druckbefehl aus der Stationsdatei aus ([pdf] drucken). Ohne Eintrag passiert nichts."
+help_en = "Runs the print command from the station file ([pdf] drucken). Does nothing if none is set."
+
+[[param]]
 id = "pota_slots"
 label = "POTA-Spalten"
 label_en = "POTA columns"
@@ -86,3 +106,8 @@ path = "{input.dir}/{input.stem}_seriendruck.csv"
 label = "Umschlag-Adressen"
 label_en = "Envelope addresses"
 path = "{input.dir}/{input.stem}_umschlaege.csv"
+
+[[output]]
+label = "QSL-Karten (PDF)"
+label_en = "QSL cards (PDF)"
+path = "{input.dir}/{input.stem}_karten.pdf"

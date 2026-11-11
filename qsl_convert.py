@@ -42,10 +42,16 @@ Umschläge für Direct-Karten:
   (QSL-Manager), wird dessen Adresse abgefragt. Format wie bisher adressen.csv (Semikolon), passend
   zur Umschlag-Vorlage; die Zeilen liegen in derselben Reihenfolge wie die Karten.
 
+Druckfertiges PDF (optional, --pdf):
+  Eine QSL-Karte pro Seite im Format 140 × 90 mm, im Layout von QSL_Blanko.docx, in derselben
+  Reihenfolge wie die CSV. Stationsdaten (Name, Anschrift, Heimat-Locator, DOK, Zonen) aus
+  qsl_station.ini (Vorlage: qsl_station.example.ini). Siehe qsl_pdf.py.
+
 Verwendung:
   python3 qsl_convert.py qsl_export.csv [ausgabe.csv]
   python3 qsl_convert.py export.adi [ausgabe.csv] [--no-pota] [--pota-slots N]
                                     [--no-qrz] [--umschlaege DATEI] [--qrz-delay SEK]
+                                    [--pdf [DATEI]] [--drucken] [--station DATEI]
 """
 
 import argparse
@@ -625,9 +631,38 @@ def make_umschlaege(rows: list, path: str, delay: float = 1.0):
 
 # --- Konvertierung ----------------------------------------------------------
 
+def make_pdf(out_rows: list, pdf_path: str, station_path: str, run_print: bool = False) -> bool:
+    """Druckfertiges PDF; Fehler brechen den Lauf nicht ab, die CSV ist dann trotzdem da."""
+    import qsl_pdf
+    ld.step("PDF erzeugen", "run", id="pdf")
+    try:
+        n = qsl_pdf.write_cards(out_rows, pdf_path, station_path)
+    except (qsl_pdf.QslPdfError, OSError, ValueError, KeyError) as e:
+        print(f"  ! PDF nicht erzeugt: {e}", file=sys.stderr)
+        ld.step("PDF erzeugen", "err", id="pdf", detail=str(e))
+        ld.note(f"PDF nicht erzeugt: {e}", "err")
+        return False
+    print(f"✓ {n} Karten (140 × 90 mm) → {pdf_path}")
+    ld.step("PDF erzeugen", "ok", id="pdf", detail=f"{n} Karten")
+    ld.file(pdf_path, "QSL-Karten (PDF)")
+    if run_print:
+        ld.step("Drucken", "run", id="print")
+        try:
+            msg = qsl_pdf.run_print_command(pdf_path, station_path)
+        except (qsl_pdf.QslPdfError, OSError) as e:
+            print(f"  ! {e}", file=sys.stderr)
+            ld.step("Drucken", "err", id="print", detail=str(e))
+            ld.note(str(e), "err")
+            return False
+        print(f"✓ Druckbefehl ausgeführt{f' ({msg})' if msg else ''}")
+        ld.step("Drucken", "ok", id="print", detail=f"{n} Karten")
+    return True
+
+
 def convert(input_path: str, output_path: str, lookup_pota: bool = True,
             pota_slots: int = POTA_SLOTS, umschlaege_path: str | None = None,
-            qrz_delay: float = 1.0):
+            qrz_delay: float = 1.0,
+            pdf_path: str | None = None, station_path: str | None = None, run_print: bool = False):
     rows = read_rows(input_path)
     ld.step(f"{Path(input_path).name} lesen", "ok", id="read", detail=f"{len(rows)} QSOs")
 
@@ -769,9 +804,13 @@ def convert(input_path: str, output_path: str, lookup_pota: bool = True,
               for o in out_rows], id="karten", title="Karten in Druckreihenfolge")
     ld.file(output_path, "Seriendruck-CSV")
 
+    pdf_ok = make_pdf(out_rows, pdf_path, station_path, run_print) if pdf_path else None
+
     addresses = make_umschlaege(rows, umschlaege_path, qrz_delay) if umschlaege_path else None
 
-    if addresses is False:
+    if pdf_ok is False:
+        ld.done(f"{len(out_rows)} Karten für den Seriendruck vorbereitet – PDF nicht erzeugt.", "warn")
+    elif addresses is False:
         ld.done(f"{len(out_rows)} Karten für den Seriendruck vorbereitet – Umschlag-Adressen unvollständig.", "warn")
     else:
         ld.done(f"{len(out_rows)} Karten für den Seriendruck vorbereitet.", "ok")
@@ -790,8 +829,21 @@ if __name__ == "__main__":
                     help="Ausgabe für die Umschlag-CSV (Standard: <eingabe>_umschlaege.csv)")
     ap.add_argument("--qrz-delay", type=float, default=1.0, metavar="SEK",
                     help="Wartezeit zwischen QRZ-Abfragen (Standard: 1.0)")
+    ap.add_argument("--pdf", nargs="?", const="", metavar="DATEI",
+                    help="zusätzlich druckfertiges PDF, eine Karte pro Seite, 140 × 90 mm "
+                         "(Standard: <eingabe>_karten.pdf)")
+    ap.add_argument("--drucken", action="store_true",
+                    help="nach dem PDF den Druckbefehl aus der Stationsdatei ausführen ([pdf] drucken); "
+                         "schließt --pdf ein")
+    ap.add_argument("--station", metavar="DATEI",
+                    default=str(Path(__file__).resolve().parent / "qsl_station.ini"),
+                    help="Stationsdaten für das PDF (Standard: qsl_station.ini neben dem Script)")
     args = ap.parse_args()
     out = args.output or str(Path(args.input).stem + "_seriendruck.csv")
+    if args.drucken and args.pdf is None:
+        args.pdf = ""
+    pdf = None if args.pdf is None else (args.pdf or str(Path(args.input).stem + "_karten.pdf"))
     umschlaege = None if args.no_qrz else (args.umschlaege or str(Path(args.input).stem + "_umschlaege.csv"))
     convert(args.input, out, lookup_pota=not args.no_pota, pota_slots=args.pota_slots,
-            umschlaege_path=umschlaege, qrz_delay=args.qrz_delay)
+            umschlaege_path=umschlaege, qrz_delay=args.qrz_delay, pdf_path=pdf, station_path=args.station,
+            run_print=args.drucken)

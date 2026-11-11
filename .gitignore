@@ -4,6 +4,7 @@
 *.adif
 !examples/sample.adi
 *.vcf
+*.pdf
 
 # Python
 __pycache__/
@@ -14,3 +15,6 @@ __pycache__/
 
 # Word-Sperrdateien
 ~$*
+
+# Eigene Stationsdaten für das PDF
+qsl_station.ini
