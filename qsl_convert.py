@@ -402,6 +402,7 @@ def pota_name(ref: str) -> str:
 QRZ_API_URL = "https://xmldata.qrz.com/xml/current/"
 QRZ_NS = "{http://xmldata.qrz.com}"
 QRZ_AGENT = "qsl-convert/1.0"
+QRZ_ATTEMPTS = 3
 
 # Manche macOS-Python-Installationen (python.org-Installer) haben keine Root-Zertifikate.
 # Ist certifi installiert, nutzen wir dessen Liste, sonst den System-Standard.
@@ -477,13 +478,20 @@ class QRZClient:
     def _request(self, params: dict):
         url = QRZ_API_URL + "?" + urllib.parse.urlencode(params)
         req = urllib.request.Request(url, headers={"User-Agent": QRZ_AGENT})
-        try:
-            with urllib.request.urlopen(req, timeout=15, context=_SSL_CONTEXT) as resp:
-                data = resp.read()
-        except OSError as e:
-            if "CERTIFICATE_VERIFY_FAILED" in str(e):
-                raise QRZError(SSL_HELP_TEXT)
-            raise QRZError(f"Netzwerkfehler bei der QRZ-Anfrage: {e}")
+        # QRZ.com ist zeitweise überlastet (Zeitüberschreitung, HTTP 5xx): bis zu drei Versuche mit Pause
+        for attempt in range(1, QRZ_ATTEMPTS + 1):
+            try:
+                with urllib.request.urlopen(req, timeout=15, context=_SSL_CONTEXT) as resp:
+                    data = resp.read()
+                break
+            except OSError as e:
+                if "CERTIFICATE_VERIFY_FAILED" in str(e):
+                    raise QRZError(SSL_HELP_TEXT)
+                transient = not isinstance(e, urllib.error.HTTPError) or e.code >= 500
+                if not transient or attempt == QRZ_ATTEMPTS:
+                    raise QRZError(f"Netzwerkfehler bei der QRZ-Anfrage: {e}")
+                print(f"(QRZ.com antwortet nicht, Versuch {attempt + 1}/{QRZ_ATTEMPTS}) ...", end=" ", flush=True)
+                time.sleep(3 * attempt)
         try:
             return ET.fromstring(data)
         except ET.ParseError as e:
