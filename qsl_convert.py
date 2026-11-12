@@ -35,12 +35,12 @@ Sortierung (nach QSL_SENT_VIA):
   - VERSAND     →  "BUREAU" / "DIRECT" / "ELECTRONIC" / "MANAGER" (aus QSL_SENT_VIA)
   - DARC_GRUPPE →  Haupt-Prefix, unter dem die Karte beim DARC-QSL-Büro gebündelt wird
 
-Umschläge für Direct-Karten:
-  Für alle QSOs mit QSL_SENT_VIA = D wird zusätzlich <eingabe>_umschlaege.csv geschrieben:
-  die Postanschrift je QSO aus der QRZ.com-XML-Datenbank (braucht ein QRZ-XML-Abo; Zugangsdaten
-  über QRZ_USERNAME/QRZ_PASSWORD oder interaktive Abfrage). Steht in QSL_VIA ein anderes Rufzeichen
-  (QSL-Manager), wird dessen Adresse abgefragt. Format wie bisher adressen.csv (Semikolon), passend
-  zur Umschlag-Vorlage; die Zeilen liegen in derselben Reihenfolge wie die Karten.
+Umschläge für Direct-Karten (--aufgabe umschlaege oder alles):
+  Für alle QSOs mit QSL_SENT_VIA = D: Postanschrift aus der QRZ.com-XML-Datenbank (QRZ-XML-Abo;
+  Zugangsdaten über QRZ_USERNAME/QRZ_PASSWORD oder interaktiv), bei QSL-Manager in QSL_VIA dessen
+  Adresse. Die Adressen werden zum Prüfen und Korrigieren gezeigt (LogDeck: Tabelle, Terminal: CSV),
+  Korrekturen je Rufzeichen in ~/.config/wavelog-qsl-convert/adressen.json gemerkt. Ausgabe:
+  <eingabe>_umschlaege.csv (Word-Vorlage) und mit --pdf <eingabe>_umschlaege.pdf (C6).
 
 Druckfertiges PDF (optional, --pdf):
   Eine QSL-Karte pro Seite im Format 140 × 90 mm, im Layout von QSL_Blanko.docx, in derselben
@@ -51,7 +51,8 @@ Verwendung:
   python3 qsl_convert.py qsl_export.csv [ausgabe.csv]
   python3 qsl_convert.py export.adi [ausgabe.csv] [--no-pota] [--pota-slots N]
                                     [--no-qrz] [--umschlaege DATEI] [--qrz-delay SEK]
-                                    [--pdf [DATEI]] [--karte blanko|vordruck] [--drucken] [--station DATEI]
+                                    [--aufgabe alles|karten|umschlaege] [--pdf [DATEI]]
+                                    [--karte blanko|vordruck] [--drucken] [--station DATEI]
 """
 
 import argparse
@@ -519,68 +520,155 @@ class QRZClient:
         return {c.tag.replace(QRZ_NS, ""): (c.text or "").strip() for c in cs}, None
 
 
-def address_row(lookup_call, call, via_call, datum, band, data, error) -> dict:
-    row = {"Rufzeichen": call, "Via_Rufzeichen": via_call or "", "QRZ_Rufzeichen": lookup_call,
-           "Datum": datum, "Band": band}
-    if data is None:
-        row.update({k: "" for k in ("Vorname", "Nachname", "Adresse", "Ort", "Bundesland", "PLZ", "Land")})
-        row["Status"] = f"NICHT GEFUNDEN ({error})" if error else "NICHT GEFUNDEN"
-        return row
-    row.update({"Vorname": data.get("fname", ""), "Nachname": data.get("name", ""),
-                "Adresse": data.get("addr1", ""), "Ort": data.get("addr2", ""),
-                "Bundesland": data.get("state", ""), "PLZ": data.get("zip", ""),
-                "Land": data.get("country", "")})
-    row["Status"] = "OK" if data.get("addr1") or data.get("addr2") else "OHNE ADRESSE BEI QRZ"
-    return row
+# Länder, in denen die Postleitzahl vor dem Ort steht (Name wie bei QRZ.com)
+ZIP_FIRST = {
+    "germany", "austria", "switzerland", "liechtenstein", "france", "italy", "spain", "portugal",
+    "netherlands", "belgium", "luxembourg", "denmark", "norway", "sweden", "finland", "iceland",
+    "poland", "czech republic", "slovak republic", "slovakia", "slovenia", "croatia", "hungary",
+    "romania", "bulgaria", "greece", "serbia", "montenegro", "bosnia-herzegovina", "north macedonia",
+    "albania", "lithuania", "latvia", "estonia", "monaco", "san marino", "vatican", "andorra",
+    "federal republic of germany",
+}
+ADDRESS_KEYS = ("Name", "Zeile1", "Zeile2", "Zeile3", "Land")
+CORRECTIONS_FILE = Path("~/.config/wavelog-qsl-convert/adressen.json").expanduser()
 
 
-def build_address_rows(direct_rows: list, client, delay: float = 1.0) -> list[dict]:
+def qrz_address(data: dict | None) -> dict:
+    """QRZ-Daten → Adresszeilen, so wie sie auf den Umschlag kommen (PLZ/Ort je nach Land)."""
+    if not data:
+        return {k: "" for k in ADDRESS_KEYS}
+    city, state, zip_ = data.get("addr2", "").strip(), data.get("state", "").strip(), data.get("zip", "").strip()
+    country = data.get("country", "").strip()
+    if zip_ and zip_ in city:
+        zip_ = ""                                   # PLZ steht schon im Ort
+    if state.isdigit():
+        state = ""                                  # z. B. japanische Präfektur-Nummern
+    if country.lower() in ZIP_FIRST:
+        line2 = " ".join(x for x in (zip_, city) if x)
+    else:
+        line2 = " ".join(x for x in (city, state, zip_) if x)
+    return {"Name": " ".join(x for x in (data.get("fname", "").strip(), data.get("name", "").strip()) if x),
+            "Zeile1": data.get("addr1", "").strip(), "Zeile2": line2, "Zeile3": "", "Land": country}
+
+
+def load_corrections() -> dict:
+    try:
+        return json.loads(CORRECTIONS_FILE.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
+def save_corrections(data: dict):
+    CORRECTIONS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    CORRECTIONS_FILE.write_text(json.dumps(data, ensure_ascii=False, indent=1, sort_keys=True), encoding="utf-8")
+
+
+def lookup_addresses(direct_rows: list, client, delay: float = 1.0) -> list[dict]:
     """
-    Pro Direct-QSO genau eine Zeile (Reihenfolge wie die Karten, nichts wird zusammengefasst).
-    Jedes Ziel-Rufzeichen wird nur einmal bei QRZ abgefragt.
+    Pro Direct-QSO eine Umschlag-Zeile (Reihenfolge wie die Karten). Jedes Ziel-Rufzeichen wird nur einmal
+    bei QRZ abgefragt. Gespeicherte Korrekturen haben Vorrang vor den QRZ-Daten.
     """
-    targets = [(*determine_lookup(r), r.get("DATE_ON", "").replace("-", ""), r.get("BAND", "").strip())
-               for r in direct_rows]
+    targets = [(*determine_lookup(r), r) for r in direct_rows]
     unique = list(dict.fromkeys(t[0] for t in targets))
-    print(f"  {len(unique)} eindeutige Rufzeichen werden bei QRZ abgefragt")
-    ld.step("Umschlag-Adressen bei QRZ.com abfragen", "run", id="qrz", detail=f"{len(unique)} Rufzeichen")
-
-    cache, aborted, failures = {}, False, 0
-    for idx, call in enumerate(unique, start=1):
-        print(f"  [{idx}/{len(unique)}] QRZ: {call} ...", end=" ", flush=True)
-        ld.progress(idx - 1, len(unique), f"QRZ.com: {call}")
-        try:
-            data, err = client.lookup(call)
-        except QRZError as e:
-            print(f"FEHLER: {e}")
-            cache[call] = (None, str(e))
-            failures += 1
-            if "login" in str(e).lower() or "abo" in str(e).lower() or failures >= 2:
-                print("  ! Abbruch der Abfragen (Login-/Abo- oder Verbindungsproblem)")
-                ld.note(f"QRZ-Abfragen abgebrochen: {e}", "err")
-                aborted = True
-                break
-            time.sleep(delay)
-            continue
+    found, aborted = {}, False
+    if client:
+        print(f"  {len(unique)} eindeutige Rufzeichen werden bei QRZ abgefragt")
+        ld.step("Umschlag-Adressen bei QRZ.com abfragen", "run", id="qrz", detail=f"{len(unique)} Rufzeichen")
         failures = 0
-        print("keine Adresse (" + str(err) + ")" if data is None
-              else "OK" if data.get("addr1") or data.get("addr2") else "ohne Adresse")
-        cache[call] = (data, err)
-        time.sleep(delay)
+        for idx, call in enumerate(unique, start=1):
+            print(f"  [{idx}/{len(unique)}] QRZ: {call} ...", end=" ", flush=True)
+            ld.progress(idx - 1, len(unique), f"QRZ.com: {call}")
+            try:
+                data, err = client.lookup(call)
+            except QRZError as e:
+                print(f"FEHLER: {e}")
+                found[call] = (None, str(e))
+                failures += 1
+                if "login" in str(e).lower() or "abo" in str(e).lower() or failures >= 2:
+                    print("  ! Abbruch der Abfragen (Login-/Abo- oder Verbindungsproblem)")
+                    ld.note(f"QRZ-Abfragen abgebrochen: {e}", "err")
+                    aborted = True
+                    break
+                time.sleep(delay)
+                continue
+            failures = 0
+            print("keine Adresse (" + str(err) + ")" if data is None
+                  else "OK" if data.get("addr1") or data.get("addr2") else "ohne Adresse")
+            found[call] = (data, err)
+            time.sleep(delay)
+        ld.progress(len(unique), len(unique), "QRZ.com fertig")
+        ld.step("Umschlag-Adressen bei QRZ.com abfragen", "err" if aborted else "ok", id="qrz",
+                detail="abgebrochen" if aborted else f"{len(unique)} Rufzeichen")
 
-    ld.progress(len(unique), len(unique), "QRZ.com fertig")
-    ld.step("Umschlag-Adressen bei QRZ.com abfragen", "err" if aborted else "ok", id="qrz",
-            detail="abgebrochen" if aborted else f"{len(unique)} Rufzeichen")
-    fallback = (None, "nicht abgefragt (Abbruch)" if aborted else "unbekannter Fehler")
-    return [address_row(lc, call, via, datum, band, *cache.get(lc, fallback))
-            for lc, call, via, datum, band in targets]
+    corrections = load_corrections()
+    out = []
+    for lookup_call, call, via_call, r in targets:
+        data, err = found.get(lookup_call, (None, None if client and not aborted else "nicht abgefragt"))
+        qrz = qrz_address(data)
+        row = {"Rufzeichen": call, "Empfaenger": lookup_call, "Via_Rufzeichen": via_call or "",
+               "Datum": r.get("DATE_ON", "").replace("-", ""), "Band": r.get("BAND", "").strip(),
+               "_pota": bool(r.get("MY_POTA_REF", "").strip()), "_absender": home_call(r.get("STATION_CALLSIGN", "")),
+               "_qrz": qrz}
+        saved = corrections.get(lookup_call)
+        if saved:
+            row.update({k: saved.get(k, "") for k in ADDRESS_KEYS})
+            if data and any(saved.get("qrz", {}).values()) and saved["qrz"] != qrz:
+                row["_state"], row["_note"] = "warn", ("Deine Korrektur vom " + saved.get("datum", "?")
+                                                       + "; QRZ.com hat inzwischen: "
+                                                       + " / ".join(v for v in qrz.values() if v))
+            else:
+                row["_state"], row["_note"] = "ok", "Korrigierte Adresse vom " + saved.get("datum", "?")
+        else:
+            row.update(qrz)
+            if not data:
+                row["_state"], row["_note"] = "warn", f"Keine Adresse von QRZ.com ({err or 'nicht gefunden'})"
+            elif not (qrz["Zeile1"] and qrz["Zeile2"]):
+                row["_state"], row["_note"] = "warn", "Adresse bei QRZ.com unvollständig"
+            else:
+                row["_state"], row["_note"] = "ok", "Adresse von QRZ.com"
+        out.append(row)
+    return out
 
 
-def write_umschlaege(rows: list[dict], path: str):
-    with open(path, "w", newline="", encoding="utf-8-sig") as f:
-        writer = csv.DictWriter(f, fieldnames=UMSCHLAG_FELDER, delimiter=";")
-        writer.writeheader()
-        writer.writerows(rows)
+ENVELOPE_COLUMNS = [
+    {"key": "Rufzeichen", "label": "QSO", "mono": True},
+    {"key": "Empfaenger", "label": "Empfänger", "mono": True},
+    {"key": "Name", "label": "Name", "edit": True, "width": 18},
+    {"key": "Zeile1", "label": "Straße", "edit": True, "width": 20},
+    {"key": "Zeile2", "label": "PLZ / Ort", "edit": True, "width": 18},
+    {"key": "Zeile3", "label": "Zusatz", "edit": True, "width": 10},
+    {"key": "Land", "label": "Land", "edit": True, "width": 12},
+]
+
+
+def remember_corrections(rows: list[dict]) -> int:
+    """Speichert Adressen, die von den QRZ-Daten abweichen, je Empfänger. Liefert die Zahl der Änderungen."""
+    corrections, changed = load_corrections(), 0
+    today = time.strftime("%Y-%m-%d")
+    for r in rows:
+        call, addr = r["Empfaenger"], {k: r.get(k, "").strip() for k in ADDRESS_KEYS}
+        if addr == r["_qrz"]:
+            if call in corrections:                 # wieder wie bei QRZ: Korrektur nicht mehr nötig
+                del corrections[call]
+                changed += 1
+            continue
+        old = corrections.get(call, {})
+        if {k: old.get(k, "") for k in ADDRESS_KEYS} != addr or old.get("qrz") != r["_qrz"]:
+            corrections[call] = {**addr, "qrz": r["_qrz"], "datum": today}
+            changed += 1
+    if changed:
+        save_corrections(corrections)
+    return changed
+
+
+def envelope_csv_row(r: dict) -> dict:
+    """Umschlag-Zeile → Spalten der Word-Vorlage umschlaege.docx."""
+    has_addr = r.get("Zeile1") or r.get("Zeile2")
+    return {"Rufzeichen": r["Rufzeichen"], "Via_Rufzeichen": r["Via_Rufzeichen"], "QRZ_Rufzeichen": r["Empfaenger"],
+            "Datum": r["Datum"], "Band": r["Band"], "Vorname": r.get("Name", ""), "Nachname": "",
+            "Adresse": ", ".join(x for x in (r.get("Zeile1", ""), r.get("Zeile3", "")) if x),
+            "Ort": r.get("Zeile2", ""), "Bundesland": "", "PLZ": "", "Land": r.get("Land", ""),
+            "Status": "OK" if has_addr else "OHNE ADRESSE"}
 
 
 def qrz_credentials(rows: list):
@@ -595,38 +683,70 @@ def qrz_credentials(rows: list):
     return (user, pw) if user and pw else None
 
 
-def make_umschlaege(rows: list, path: str, delay: float = 1.0):
-    """Schreibt die Umschlag-CSV. Liefert True (alle Adressen da), False (fehlende) oder None (keine Direct-Karten)."""
+def make_umschlaege(rows: list, path: str, delay: float = 1.0, pdf_path: str | None = None,
+                    station_file: str | None = None, run_print: bool = False, check_path: str | None = None):
+    """
+    Umschlag-Adressen für Direct-Karten: QRZ.com + gespeicherte Korrekturen → Tabelle zum Prüfen (LogDeck)
+    bzw. CSV zum Bearbeiten (Terminal) → Korrekturen merken → Umschlag-CSV und optional -PDF.
+    Liefert None (keine Direct-Karten), "ok", "fehlend" (nicht alle mit Adresse), "abgebrochen" oder "fehler".
+    """
     direct = [r for r in rows if r.get("QSL_SENT_VIA", "").strip().upper() == "D"
               and r.get("CALL", "").strip()]
     if not direct:
+        ld.note("Keine Direct-Karten im Export – keine Umschläge.", "info")
         return None
     print(f"\n{len(direct)} Direct-Karten → Umschlag-Adressen")
     creds = qrz_credentials(rows)
     if not creds:
-        print("  ! Keine QRZ-Zugangsdaten (QRZ_USERNAME/QRZ_PASSWORD oder interaktiv im Terminal) "
-              "– Umschlag-CSV übersprungen")
-        ld.note(f"{len(direct)} Direct-Karten, aber kein QRZ.com-Login – Umschlag-Adressen übersprungen. "
-                "Login in LogDeck unter Einstellungen → QRZ.com-Login eintragen.", "warn")
-        return False
-    out = build_address_rows(direct, QRZClient(*creds), delay)
-    write_umschlaege(out, path)
-    n_ok = sum(1 for r in out if r["Status"] == "OK")
-    print(f"✓ {n_ok} von {len(out)} Direct-Karten mit Adresse → {path}")
-    ld.stat("Mit Adresse", f"{n_ok}/{len(out)}", "ok" if n_ok == len(out) else "warn")
-    ld.table([{"key": "Rufzeichen", "label": "Rufzeichen", "mono": True},
-              {"key": "Name", "label": "Name"},
-              {"key": "Ort", "label": "Ort"},
-              {"key": "Status", "label": "Status"}],
-             [{"Rufzeichen": r["Rufzeichen"], "Name": f"{r.get('Vorname', '')} {r.get('Nachname', '')}".strip(),
-               "Ort": ", ".join(x for x in (r.get("Ort", ""), r.get("Land", "")) if x),
-               "Status": r["Status"], "_state": "ok" if r["Status"] == "OK" else "warn"} for r in out],
-             id="umschlaege", title="Umschlag-Adressen (Direct)")
-    ld.file(path, "Umschlag-Adressen")
-    if n_ok < len(out):
-        print("  ! Ohne Adresse (Spalte Status prüfen): "
-              + ", ".join(r["Rufzeichen"] for r in out if r["Status"] != "OK"))
-    return n_ok == len(out)
+        print("  ! Keine QRZ-Zugangsdaten – nur gespeicherte Korrekturen, Rest bitte von Hand eintragen")
+        ld.note("Kein QRZ.com-Login – nur gespeicherte Adressen; fehlende bitte in der Tabelle eintragen. "
+                "Login in LogDeck unter Einstellungen → QRZ.com-Login.", "warn")
+    addresses = lookup_addresses(direct, QRZClient(*creds) if creds else None, delay)
+
+    edited = ld.edit_table(f"{len(addresses)} Umschlag-Adressen prüfen und korrigieren. "
+                           "Korrekturen werden je Rufzeichen gemerkt und beim nächsten Mal vorgeschlagen.",
+                           ENVELOPE_COLUMNS, addresses, csv_path=check_path)
+    if edited is None:
+        print("  ! Umschläge abgebrochen")
+        ld.note("Umschläge abgebrochen – nichts erzeugt.", "warn")
+        return "abgebrochen"
+    n_saved = remember_corrections(edited)
+    if n_saved:
+        print(f"  {n_saved} Korrektur(en) gemerkt → {CORRECTIONS_FILE}")
+        ld.note(f"{n_saved} Adress-Korrektur(en) gemerkt.", "info")
+
+    with open(path, "w", newline="", encoding="utf-8-sig") as f:
+        writer = csv.DictWriter(f, fieldnames=UMSCHLAG_FELDER, delimiter=";")
+        writer.writeheader()
+        writer.writerows(envelope_csv_row(r) for r in edited)
+    complete = [r for r in edited if r.get("Zeile1") or r.get("Zeile2")]
+    missing = [r["Rufzeichen"] for r in edited if r not in complete]
+    print(f"✓ {len(complete)} von {len(edited)} Direct-Karten mit Adresse → {path}")
+    ld.stat("Mit Adresse", f"{len(complete)}/{len(edited)}", "ok" if not missing else "warn")
+    ld.file(path, "Umschlag-Adressen (CSV)")
+    if missing:
+        print("  ! Ohne Adresse (kein Umschlag): " + ", ".join(missing))
+        ld.note("Ohne Adresse, kein Umschlag: " + ", ".join(missing), "warn")
+
+    if pdf_path and complete:
+        import qsl_pdf
+        ld.step("Umschlag-PDF erzeugen", "run", id="env_pdf")
+        try:
+            n = qsl_pdf.write_envelopes(complete, pdf_path, station_file)
+            print(f"✓ {n} Umschläge (C6, 162 × 114 mm) → {pdf_path}")
+            ld.step("Umschlag-PDF erzeugen", "ok", id="env_pdf", detail=f"{n} Umschläge")
+            ld.file(pdf_path, "Umschläge (PDF)")
+            if run_print:
+                ld.step("Umschläge drucken", "run", id="env_print")
+                msg = qsl_pdf.run_print_command(pdf_path, station_file, section="umschlag")
+                print(f"✓ Druckbefehl für Umschläge ausgeführt{f' ({msg})' if msg else ''}")
+                ld.step("Umschläge drucken", "ok", id="env_print", detail=f"{n} Umschläge")
+        except (qsl_pdf.QslPdfError, OSError, ValueError, KeyError) as e:
+            print(f"  ! Umschläge: {e}", file=sys.stderr)
+            ld.step("Umschlag-PDF erzeugen", "err", id="env_pdf", detail=str(e))
+            ld.note(f"Umschläge: {e}", "err")
+            return "fehler"
+    return "fehlend" if missing else "ok"
 
 
 # --- Konvertierung ----------------------------------------------------------
@@ -661,7 +781,7 @@ def make_pdf(out_rows: list, pdf_path: str, station_path: str, run_print: bool =
 
 
 def convert(input_path: str, output_path: str, lookup_pota: bool = True,
-            pota_slots: int = POTA_SLOTS, umschlaege_path: str | None = None,
+            pota_slots: int = POTA_SLOTS, umschlaege_path: str | None = None, aufgabe: str = "alles",
             qrz_delay: float = 1.0,
             pdf_path: str | None = None, station_path: str | None = None, run_print: bool = False,
             layout: str | None = None):
@@ -792,28 +912,42 @@ def convert(input_path: str, output_path: str, lookup_pota: bool = True,
     print("  Versand: " + ", ".join(f"{k} {v}" for k, v in counts.items()))
     print(f"  Felder: {', '.join(fieldnames)}")
 
-    ld.stat("Karten", len(out_rows))
-    for k, v in counts.items():
-        ld.stat(k.capitalize() if k.isupper() else k, v)
-    ld.table([{"key": "call", "label": "Rufzeichen", "mono": True},
-              {"key": "date", "label": "Datum", "mono": True},
-              {"key": "band", "label": "Band"},
-              {"key": "mode", "label": "Mode"},
-              {"key": "via", "label": "Versand"},
-              {"key": "pota", "label": "POTA", "mono": True}],
-             [{"call": o["AN_RUFZEICHEN"], "date": f"{o['DATUM_T']}.{o['DATUM_M']}.{o['DATUM_J']}",
-               "band": o["BAND"], "mode": o["BETRIEBSART"], "via": o["VERSAND"], "pota": o["POTA_REF"]}
-              for o in out_rows], id="karten", title="Karten in Druckreihenfolge")
-    ld.file(output_path, "Seriendruck-CSV")
+    if aufgabe != "umschlaege":                      # Kartenübersicht nur, wenn es um Karten geht
+        ld.stat("Karten", len(out_rows))
+        for k, v in counts.items():
+            ld.stat(k.capitalize() if k.isupper() else k, v)
+        ld.table([{"key": "call", "label": "Rufzeichen", "mono": True},
+                  {"key": "date", "label": "Datum", "mono": True},
+                  {"key": "band", "label": "Band"},
+                  {"key": "mode", "label": "Mode"},
+                  {"key": "via", "label": "Versand"},
+                  {"key": "pota", "label": "POTA", "mono": True}],
+                 [{"call": o["AN_RUFZEICHEN"], "date": f"{o['DATUM_T']}.{o['DATUM_M']}.{o['DATUM_J']}",
+                   "band": o["BAND"], "mode": o["BETRIEBSART"], "via": o["VERSAND"], "pota": o["POTA_REF"]}
+                  for o in out_rows], id="karten", title="Karten in Druckreihenfolge")
+        ld.file(output_path, "Seriendruck-CSV")
 
-    pdf_ok = make_pdf(out_rows, pdf_path, station_path, run_print, layout) if pdf_path else None
+    pdf_ok = (make_pdf(out_rows, pdf_path, station_path, run_print, layout)
+              if pdf_path and aufgabe in ("alles", "karten") else None)
 
-    addresses = make_umschlaege(rows, umschlaege_path, qrz_delay) if umschlaege_path else None
+    addresses = None
+    if umschlaege_path and aufgabe in ("alles", "umschlaege"):
+        addresses = make_umschlaege(rows, umschlaege_path, qrz_delay,
+                                    pdf_path=f"{Path(input_path).stem}_umschlaege.pdf" if pdf_path is not None else None,
+                                    station_file=station_path, run_print=run_print,
+                                    check_path=f"{Path(input_path).stem}_umschlaege_pruefen.csv")
 
-    if pdf_ok is False:
+    if aufgabe == "umschlaege":
+        ld.done({None: ("Keine Direct-Karten – keine Umschläge.", "ok"),
+                 "ok": ("Umschläge fertig.", "ok"),
+                 "fehlend": ("Umschläge fertig – nicht alle Direct-Karten haben eine Adresse (siehe Hinweise).", "warn"),
+                 "abgebrochen": ("Umschläge abgebrochen – nichts erzeugt.", "warn"),
+                 "fehler": ("Umschläge: PDF oder Druck fehlgeschlagen (siehe Hinweise).", "err")}[addresses][0],
+                {None: "ok", "ok": "ok", "fehlend": "warn", "abgebrochen": "warn", "fehler": "err"}[addresses])
+    elif pdf_ok is False:
         ld.done(f"{len(out_rows)} Karten für den Seriendruck vorbereitet – PDF nicht erzeugt.", "warn")
-    elif addresses is False:
-        ld.done(f"{len(out_rows)} Karten für den Seriendruck vorbereitet – Umschlag-Adressen unvollständig.", "warn")
+    elif addresses in ("fehlend", "abgebrochen", "fehler"):
+        ld.done(f"{len(out_rows)} Karten für den Seriendruck vorbereitet – Umschläge unvollständig.", "warn")
     else:
         ld.done(f"{len(out_rows)} Karten für den Seriendruck vorbereitet.", "ok")
 
@@ -834,6 +968,9 @@ if __name__ == "__main__":
     ap.add_argument("--pdf", nargs="?", const="", metavar="DATEI",
                     help="zusätzlich druckfertiges PDF, eine Karte pro Seite, 140 × 90 mm "
                          "(Standard: <eingabe>_karten.pdf)")
+    ap.add_argument("--aufgabe", choices=["alles", "karten", "umschlaege"], default="alles",
+                    help="karten = Karten-CSV/-PDF ohne QRZ; umschlaege = nur Umschlag-Adressen (Tabelle zum "
+                         "Prüfen) und Umschlag-PDF; alles = beides (Standard)")
     ap.add_argument("--karte", choices=["blanko", "vordruck"],
                     help="Vorlage für das PDF: blanko = komplette Rückseite, vordruck = nur QSO-Daten "
                          "auf vorgedruckte Karten (Standard: [pdf] vorlage in der Stationsdatei, sonst blanko)")
@@ -848,7 +985,9 @@ if __name__ == "__main__":
     if args.drucken and args.pdf is None:
         args.pdf = ""
     pdf = None if args.pdf is None else (args.pdf or str(Path(args.input).stem + "_karten.pdf"))
-    umschlaege = None if args.no_qrz else (args.umschlaege or str(Path(args.input).stem + "_umschlaege.csv"))
+    if args.aufgabe == "umschlaege":
+        args.no_qrz = False
+    umschlaege = None if args.no_qrz or args.aufgabe == "karten" else (args.umschlaege or str(Path(args.input).stem + "_umschlaege.csv"))
     convert(args.input, out, lookup_pota=not args.no_pota, pota_slots=args.pota_slots,
-            umschlaege_path=umschlaege, qrz_delay=args.qrz_delay, pdf_path=pdf, station_path=args.station,
+            umschlaege_path=umschlaege, aufgabe=args.aufgabe, qrz_delay=args.qrz_delay, pdf_path=pdf, station_path=args.station,
             run_print=args.drucken, layout=args.karte)

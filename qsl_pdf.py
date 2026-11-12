@@ -2,7 +2,7 @@
 qsl_pdf.py
 ==========
 Erzeugt aus den Zeilen von qsl_convert.py ein druckfertiges PDF mit einer QSL-Karte pro Seite
-(140 × 90 mm). Zwei Vorlagen: "blanko" (komplette Rückseite, Layout von QSL_Blanko.docx) und
+(140 × 90 mm) sowie Umschläge C6 (162 × 114 mm, Layout von umschlaege.docx). Zwei Kartenvorlagen: "blanko" (komplette Rückseite, Layout von QSL_Blanko.docx) und
 "vordruck" (nur die QSO-Daten als Überdruck auf vorgedruckte Karten, Positionen von QSL_Seriendruck.docx). Nur Standardbibliothek: eigener kleiner PDF-Writer,
 TrueType-Schriften werden vollständig eingebettet, das Logo (PNG) wird selbst dekodiert.
 
@@ -20,7 +20,8 @@ import zlib
 from pathlib import Path
 
 MM = 72 / 25.4                    # Punkt pro Millimeter
-PAGE_W, PAGE_H = 140 * MM, 90 * MM
+PAGE_W, PAGE_H = 140 * MM, 90 * MM          # QSL-Karte
+ENV_W, ENV_H = 162 * MM, 114 * MM           # Umschlag C6 (wie umschlaege.docx)
 TW = 1 / 20                       # Twips → Punkt (Layout ist aus der Word-Vorlage übernommen)
 
 GRAY_TEXT, GRAY_FILL, GRAY_LINE = 0.35, 0.25, 0.25
@@ -84,6 +85,7 @@ def load_station(path: str | None = None) -> dict:
     cp.read(p, encoding="utf-8")
     st = dict(cp["station"]) if cp.has_section("station") else {}
     pdf = dict(cp["pdf"]) if cp.has_section("pdf") else {}
+    env = dict(cp["umschlag"]) if cp.has_section("umschlag") else {}
 
     def rel(value):
         if not value:
@@ -110,6 +112,8 @@ def load_station(path: str | None = None) -> dict:
         "rotate": int(pdf.get("rotate", "0").strip() or 0) % 360,
         "print_command": pdf.get("drucken", "").strip(),
         "layout": pdf.get("vorlage", "blanko").strip().lower() or "blanko",
+        "env_rotate": int(env.get("rotate", "0").strip() or 0) % 360,
+        "env_print_command": env.get("drucken", "").strip(),
     }
 
 
@@ -318,8 +322,9 @@ def read_png(path):
 # --- PDF-Writer --------------------------------------------------------------------------------
 
 class PdfWriter:
-    def __init__(self, rotate=0):
-        self.rotate = rotate       # 0 = Querformat 140 × 90; 90/270 = Hochformat 90 × 140 (Inhalt gedreht)
+    def __init__(self, rotate=0, page_w=PAGE_W, page_h=PAGE_H):
+        self.rotate = rotate       # 0 = Querformat wie entworfen; 90/270 = Hochformat (Inhalt gedreht)
+        self.page_w, self.page_h = page_w, page_h
         self.objects = []          # Index = Objektnummer - 1
         self.pages = []
         self.fonts = {}            # Name → (TTFont, {Glyph-ID: Zeichen})
@@ -389,12 +394,13 @@ class PdfWriter:
                      "/XObject << " + " ".join(f"/{n} {r} 0 R" for n, r in self.images.items()) + " >> >>")
         pages_num = self.reserve()
         kids = []
+        W, H = self.page_w, self.page_h
         if self.rotate == 90:
-            box, prefix = (PAGE_H, PAGE_W), f"0 1 -1 0 {PAGE_H:.2f} 0 cm\n"
+            box, prefix = (H, W), f"0 1 -1 0 {H:.2f} 0 cm\n"
         elif self.rotate == 270:
-            box, prefix = (PAGE_H, PAGE_W), f"0 -1 1 0 0 {PAGE_W:.2f} cm\n"
+            box, prefix = (H, W), f"0 -1 1 0 0 {W:.2f} cm\n"
         else:
-            box, prefix = (PAGE_W, PAGE_H), ""
+            box, prefix = (W, H), ""
         for content in self.pages:
             c = self.add(self.stream("", (prefix + content).encode("latin-1")))
             kids.append(self.add(f"<< /Type /Page /Parent {pages_num} 0 R "
@@ -423,9 +429,8 @@ class Page:
     def __init__(self, pdf: PdfWriter):
         self.pdf, self.ops = pdf, []
 
-    @staticmethod
-    def _xy(x, y):
-        return x * TW, PAGE_H - y * TW
+    def _xy(self, x, y):
+        return x * TW, self.pdf.page_h - y * TW
 
     def rect(self, x, y, w, h, fill=None, stroke=None):
         px, py = self._xy(x, y + h)
@@ -679,14 +684,15 @@ def write_cards(rows: list, path: str, station_file: str | None, layout: str | N
     return len(rows)
 
 
-def run_print_command(pdf_path: str, station_file: str | None) -> str:
+def run_print_command(pdf_path: str, station_file: str | None, section: str = "pdf") -> str:
     """
     Führt den in der Stationsdatei unter [pdf] drucken eingetragenen Befehl aus ({pdf} = Datei).
     Das Script kennt keinen Drucker; ohne Eintrag passiert nichts. Liefert die Ausgabe des Befehls.
     """
-    command = load_station(station_file)["print_command"]
+    st = load_station(station_file)
+    command = st["env_print_command"] if section == "umschlag" else st["print_command"]
     if not command:
-        raise QslPdfError("Kein Druckbefehl konfiguriert – in der Stationsdatei unter [pdf] 'drucken' eintragen.")
+        raise QslPdfError(f"Kein Druckbefehl konfiguriert – in der Stationsdatei unter [{section}] 'drucken' eintragen.")
     args = [a.replace("{pdf}", pdf_path) for a in shlex.split(command)]
     if not any("{pdf}" in a for a in shlex.split(command)):
         args.append(pdf_path)
@@ -697,3 +703,58 @@ def run_print_command(pdf_path: str, station_file: str | None) -> str:
     if result.returncode != 0:
         raise QslPdfError(f"Druckbefehl fehlgeschlagen: {(result.stderr or result.stdout).strip()}")
     return (result.stdout or result.stderr).strip()
+
+
+# --- Umschlag C6 (Positionen aus umschlaege.docx, Twips; Seite 9180 × 6460) -------------------
+
+ENV_SENDER = (289 + 144, 237 + 72, 4103 - 288)      # Absender oben links: x, y, Breite
+ENV_LOGO = (381, 3261, 2604)                          # POTA-Logo unten links: x, y, Größe
+ENV_TO = (3570 + 144, 3090 + 72, 5352 - 288, 577)     # Empfänger: x, y, Breite, Zeilenabstand (18 pt)
+
+
+def draw_envelope(page: Page, r: dict, st: dict, logo: bool):
+    R, B = "R", "B"
+    x, y, w = ENV_SENDER
+    country = st["address"][-1].upper() if st["address"] else ""
+    info = "  ".join(p for p in (country, st["home_locator"], f"ITU {st['itu_zone']}" if st["itu_zone"] else "",
+                                  f"CQ {st['cq_zone']}" if st["cq_zone"] else "") if p)
+    page.line([(r.get("_absender") or "", B, 10.5, 0)], x, y, 260, w)
+    page.line([(info, R, 6.5, 0)], x, y + 260, 180, w)
+    y += 260 + 180 + 40
+    for line in [st["name"]] + st["address"]:
+        page.line([(line, R, 9, 0)], x, y, 220, w)
+        y += 220
+
+    if logo and r.get("_pota"):
+        lx, ly, size = ENV_LOGO
+        page.image("Logo", lx, ly, size, size)
+
+    x, y, w, pitch = ENV_TO
+    name = ", ".join(p for p in (r.get("Name", ""), r.get("Empfaenger", "")) if p)
+    lines = [name, r.get("Zeile1", ""), r.get("Zeile2", "")]
+    if r.get("Zeile3"):
+        lines.append(r["Zeile3"])
+    else:
+        lines.append("")                                 # Leerzeile vor dem Land wie in der Word-Vorlage
+    lines.append((r.get("Land", "") or "").upper())
+    for line in lines:
+        page.line([(line, R, 18, 0)], x, y, pitch, w)
+        y += pitch
+
+
+def write_envelopes(rows: list, path: str, station_file: str | None) -> int:
+    """Ein Umschlag (C6) pro Zeile. rows: Umschlag-Zeilen aus qsl_convert (Name, Zeile1–3, Land …)."""
+    st = load_station(station_file)
+    regular, bold = find_fonts(st, "vordruck")
+    pdf = PdfWriter(st["env_rotate"], ENV_W, ENV_H)
+    pdf.register_font("R", regular)
+    pdf.register_font("B", bold)
+    logo = bool(st["logo"]) and os.path.isfile(st["logo"])
+    if logo:
+        pdf.register_image("Logo", st["logo"])
+    for r in rows:
+        page = Page(pdf)
+        draw_envelope(page, r, st, logo)
+        page.finish()
+    pdf.save(path)
+    return len(rows)

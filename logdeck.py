@@ -19,6 +19,7 @@ input() gestellt werden. Die normalen print()-Ausgaben des Scripts bleiben in be
     if ld.confirm("Station anlegen?", default=True): ...
     wahl = ld.choose("Welche Station?", ["DE-0034", "Neu"], default="Neu")
     name = ld.ask("Name der Station", default="POTA DE-0034")
+    rows = ld.edit_table("Adressen prüfen", [{"key": "name", "label": "Name", "edit": True}], rows)
 
 Zustände (state): ok, warn, err, run, skip. Keine Abhängigkeiten außer der Standardbibliothek.
 """
@@ -31,7 +32,8 @@ import sys
 import threading
 from typing import Any, Iterable, Sequence
 
-__all__ = ["active", "progress", "step", "note", "stat", "table", "image", "file", "done", "ask", "confirm", "choose"]
+__all__ = ["active", "progress", "step", "note", "stat", "table", "image", "file", "done", "ask", "confirm", "choose",
+           "edit_table"]
 
 PROTOCOL = 1
 
@@ -141,13 +143,15 @@ def done(text: str = "", state: str = "ok") -> None:
 
 # --- Fragen (im Terminal mit input()) -------------------------------------------------------------
 
-def _ask(kind: str, text: str, default: Any = None, options: list | None = None) -> Any:
+def _ask(kind: str, text: str, default: Any = None, options: list | None = None, **extra: Any) -> Any:
     global _asked
     if _out is None or _in is None:
         raise LookupError
     _asked += 1
     qid = f"q{_asked}"
-    if not _send(_clean({"t": "ask", "id": qid, "kind": kind, "text": text, "default": default, "options": options})):
+    ev = _clean({"t": "ask", "id": qid, "kind": kind, "text": text, "default": default, "options": options})
+    ev.update(_clean(extra))
+    if not _send(ev):
         raise LookupError
     while True:
         line = _in.readline()
@@ -159,8 +163,9 @@ def _ask(kind: str, text: str, default: Any = None, options: list | None = None)
             continue
         if msg.get("id") == qid:
             value = msg.get("value")
-            # fürs Protokoll im Terminal
-            print(f"{text} → {value}", flush=True)
+            # fürs Protokoll im Terminal (Tabellen nur als Zeilenzahl)
+            shown = f"{len(value)} Zeilen" if isinstance(value, list) else value
+            print(f"{text} → {shown}", flush=True)
             return value
 
 
@@ -213,6 +218,64 @@ def choose(text: str, options: Sequence[Any], default: str | None = None) -> str
             for o in opts:
                 if v.lower() in (o["value"].lower(), o["label"].lower()):
                     return o["value"]
+
+
+def edit_table(text: str, columns: Sequence[Any], rows: Iterable[dict], csv_path: str | None = None) -> list[dict] | None:
+    """
+    Tabelle zum Prüfen und Korrigieren. columns: dicts {key, label, edit: bool, mono: bool, width: int}
+    (width in Zeichen, optional); rows: dicts, "_state" (ok/warn/err) und "_note" (Hinweis) je Zeile.
+    Liefert die Zeilen mit den Änderungen oder None, wenn abgebrochen wurde.
+
+    In LogDeck: bearbeitbare Tabelle mit „Übernehmen“ und „Abbrechen“ (ältere LogDeck-Versionen zeigen
+    nur ein Textfeld; dann bleiben die Zeilen unverändert). Im Terminal: Mit csv_path wird die Tabelle als
+    CSV geschrieben, zum Bearbeiten (z. B. in Numbers/Excel) und danach wieder eingelesen; ohne csv_path
+    oder ohne interaktives Terminal bleiben die Zeilen unverändert.
+    """
+    cols = [c if isinstance(c, dict) else {"key": str(c), "label": str(c)} for c in columns]
+    rows = [dict(r) for r in rows]
+    try:
+        value = _ask("table", text, columns=cols, rows=rows)
+    except LookupError:
+        return _edit_table_terminal(text, cols, rows, csv_path)
+    if value is None:
+        return None
+    if not isinstance(value, list):
+        return rows
+    out = []
+    for orig, new in zip(rows, value):
+        merged = dict(orig)
+        if isinstance(new, dict):
+            for c in cols:
+                if c.get("edit") and c["key"] in new:
+                    merged[c["key"]] = "" if new[c["key"]] is None else str(new[c["key"]])
+        out.append(merged)
+    return out + rows[len(out):]
+
+
+def _edit_table_terminal(text: str, cols: list, rows: list, csv_path: str | None) -> list[dict] | None:
+    import csv
+    if not csv_path or not sys.stdin.isatty():
+        return rows
+    keys = [c["key"] for c in cols]
+    with open(csv_path, "w", newline="", encoding="utf-8-sig") as f:
+        w = csv.writer(f, delimiter=";")
+        w.writerow([c.get("label", c["key"]) for c in cols])
+        for r in rows:
+            w.writerow(["" if r.get(k) is None else r.get(k) for k in keys])
+    print(f"{text}: {csv_path}")
+    v = input("Datei bearbeiten und speichern, dann Enter (a = abbrechen): ").strip().lower()
+    if v in ("a", "abbrechen", "q"):
+        return None
+    with open(csv_path, newline="", encoding="utf-8-sig") as f:
+        data = list(csv.reader(f, delimiter=";"))[1:]
+    out = []
+    for orig, line in zip(rows, data):
+        merged = dict(orig)
+        for c, cell in zip(cols, line):
+            if c.get("edit"):
+                merged[c["key"]] = cell
+        out.append(merged)
+    return out + rows[len(out):]
 
 
 _open()

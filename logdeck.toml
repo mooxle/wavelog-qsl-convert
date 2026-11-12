@@ -28,6 +28,20 @@ help = "CSV oder ADIF aus Wavelog (QSL-Warteschlange)."
 help_en = "CSV or ADIF from Wavelog's QSL queue."
 
 [[param]]
+id = "aufgabe"
+label = "Aufgabe"
+label_en = "Task"
+type = "choice"
+flag = "--aufgabe"
+default = "karten"
+options = [
+  { value = "karten", label = "Karten", label_en = "Cards" },
+  { value = "umschlaege", label = "Umschläge für Direct-Karten", label_en = "Envelopes for direct cards" },
+]
+help = "Karten: CSV und Karten-PDF. Umschläge: Adressen von QRZ.com holen, in einer Tabelle prüfen und korrigieren (wird gemerkt), dann Umschlag-PDF."
+help_en = "Cards: CSV and card PDF. Envelopes: fetch addresses from QRZ.com, check and correct them in a table (remembered), then envelope PDF."
+
+[[param]]
 id = "pota"
 label = "POTA-Parknamen abfragen"
 label_en = "Look up POTA park names"
@@ -35,17 +49,6 @@ type = "bool"
 flag = "--no-pota"
 invert = true
 default = true
-
-[[param]]
-id = "qrz"
-label = "Umschlag-Adressen von QRZ.com"
-label_en = "Envelope addresses from QRZ.com"
-type = "bool"
-flag = "--no-qrz"
-invert = true
-default = true
-help = "Für Direct-Karten. Nutzt den QRZ.com-Login aus den Einstellungen."
-help_en = "For direct cards. Uses the QRZ.com login from the settings."
 
 [[param]]
 id = "pdf"
@@ -68,7 +71,7 @@ options = [
   { value = "blanko", label = "Blanko-Karte (komplette Rückseite)", label_en = "Blank card (full back side)" },
   { value = "vordruck", label = "Vorgedruckte Karte (nur QSO-Daten)", label_en = "Pre-printed card (QSO data only)" },
 ]
-help = "Für das PDF: leere Karten komplett bedrucken oder nur die Daten auf vorgedruckte Karten."
+help = "Nur für Karten: leere Karten komplett bedrucken oder nur die Daten auf vorgedruckte Karten."
 help_en = "For the PDF: print the whole card on blank stock, or only the data onto pre-printed cards."
 
 [[param]]
@@ -78,7 +81,7 @@ label_en = "Print after creating"
 type = "bool"
 flag = "--drucken"
 default = false
-help = "Führt den Druckbefehl aus der Stationsdatei aus ([pdf] drucken). Ohne Eintrag passiert nichts."
+help = "Führt den Druckbefehl aus der Stationsdatei aus ([pdf] drucken für Karten, [umschlag] drucken für Umschläge). Ohne Eintrag passiert nichts."
 help_en = "Runs the print command from the station file ([pdf] drucken). Does nothing if none is set."
 
 [[param]]
@@ -125,3 +128,8 @@ path = "{input.dir}/{input.stem}_umschlaege.csv"
 label = "QSL-Karten (PDF)"
 label_en = "QSL cards (PDF)"
 path = "{input.dir}/{input.stem}_karten.pdf"
+
+[[output]]
+label = "Umschläge (PDF)"
+label_en = "Envelopes (PDF)"
+path = "{input.dir}/{input.stem}_umschlaege.pdf"

@@ -167,13 +167,23 @@ Die Liste stammt von 2018. Neuere Prefixe lassen sich im Script in `DARC_PREFIXL
 
 ### Umschläge für Direktkarten
 
-Für jedes QSO mit `QSL_SENT_VIA` = `D` schreibt das Script zusätzlich `<export>_umschlaege.csv` mit der Postanschrift aus der QRZ.com-XML-Datenbank.
+Für jedes QSO mit `QSL_SENT_VIA` = `D` holt das Script die Postanschrift aus der QRZ.com-XML-Datenbank, lässt sie prüfen und erzeugt daraus die Umschläge.
 
-- **Zugangsdaten:** `QRZ_USERNAME` und `QRZ_PASSWORD` setzen oder das Script im Terminal fragen lassen. Das Passwort wird nicht angezeigt und nie gespeichert. Ein leeres Passwort überspringt den Schritt.
-- **QSL-Manager:** Nennt `QSL_VIA` ein anderes Rufzeichen (`QSL VIA ONLY KU9C`), wird die Adresse des Managers verwendet. Reine Hinweise wie `NO BURO, DIRECT only!` werden ignoriert.
-- **Portable-Rufzeichen** werden über das Heimatrufzeichen abgefragt (`OE1RDU/3` → `OE1RDU`).
+```bash
+python3 qsl_convert.py mein-export.adi --aufgabe umschlaege --pdf
+```
+
+1. **Adressen holen:** von QRZ.com, bei einem QSL-Manager in `QSL_VIA` (`QSL VIA ONLY KU9C`) dessen Adresse. Reine Hinweise wie `NO BURO, DIRECT only!` werden ignoriert, Portable-Rufzeichen über das Heimatrufzeichen abgefragt (`OE1RDU/3` → `OE1RDU`).
+2. **Prüfen und korrigieren:** Die Adressen stehen so, wie sie auf den Umschlag kommen (Name, Straße, PLZ/Ort, Zusatz, Land). PLZ und Ort sind je nach Land sortiert (`12345 Musterstadt`, `Boston MA 02101`).
+   - **In LogDeck** als Tabelle mit Eingabefeldern; „Übernehmen“ macht weiter, „Abbrechen“ erzeugt nichts.
+   - **Im Terminal** als `<export>_umschlaege_pruefen.csv` zum Bearbeiten (z. B. in Numbers), danach Enter.
+3. **Korrekturen merken:** Was von QRZ.com abweicht, speichert das Script je Rufzeichen in `~/.config/wavelog-qsl-convert/adressen.json` und schlägt es beim nächsten Mal vor. Hat sich die QRZ-Adresse seitdem geändert, markiert die Tabelle die Zeile und zeigt die neue QRZ-Adresse als Hinweis. Wer eine Zeile wieder auf die QRZ-Daten zurücksetzt, löscht damit die Korrektur.
+4. **Ausgabe:** `<export>_umschlaege.pdf` (C6, 162 × 114 mm, Layout wie `umschlaege.docx`, POTA-Logo nur bei POTA-QSOs) und `<export>_umschlaege.csv` für die Word-Vorlage. Zeilen ohne Adresse bekommen keinen Umschlag und werden aufgelistet.
+
+- **Zugangsdaten:** `QRZ_USERNAME` und `QRZ_PASSWORD` setzen oder das Script im Terminal fragen lassen. Das Passwort wird nicht angezeigt und nie gespeichert. Ohne Login gibt es nur die gemerkten Adressen; den Rest trägt man in der Tabelle ein.
 - **Eine Zeile pro QSO**, in derselben Reihenfolge wie die Direktkarten. Jedes Rufzeichen wird nur einmal abgefragt.
-- **Fehlende Adressen** listet das Script am Ende auf und markiert sie in der Spalte `Status`.
+- **Drucken:** Drehung und Druckbefehl für Umschläge stehen in `qsl_station.ini` unter `[umschlag]` (`rotate`, `drucken`), getrennt von den Karten.
+- **`--aufgabe`:** `karten` = nur Karten (ohne QRZ), `umschlaege` = nur Umschläge, `alles` (Standard) = beides. In LogDeck heißt das Feld „Aufgabe“.
 
 ### FT8 und RST
 
@@ -228,10 +238,11 @@ python3 qsl_convert.py <export.adi|export.csv> [ausgabe.csv] [optionen]
 |---|---|
 | `--no-pota` | Keine Parknamen bei der POTA-API abfragen |
 | `--pota-slots N` | Anzahl der Spalten `POTA_n` (Standard 4; die Vorlage muss dazu passen) |
-| `--no-qrz` | Keine Umschlag-Adressen abfragen |
+| `--no-qrz` | Keine Umschlag-Adressen abfragen (bei `--aufgabe alles`) |
 | `--umschlaege DATEI` | Ausgabename für die Umschlag-CSV |
 | `--qrz-delay SEK` | Pause zwischen QRZ-Abfragen (Standard 1.0) |
 | `--pdf [DATEI]` | Zusätzlich druckfertiges PDF, eine Karte pro Seite (Standard: `<export>_karten.pdf`) |
+| `--aufgabe alles\|karten\|umschlaege` | `karten`: Karten-CSV/-PDF ohne QRZ; `umschlaege`: Adressen prüfen und Umschlag-PDF; `alles` (Standard): beides |
 | `--karte blanko\|vordruck` | Vorlage für das PDF: komplette Rückseite oder nur Daten auf vorgedruckte Karten (Standard: `vorlage` in `qsl_station.ini`, sonst `blanko`) |
 | `--drucken` | Nach dem PDF den eigenen Druckbefehl aus `qsl_station.ini` ausführen (`[pdf] drucken`), schließt `--pdf` ein |
 | `--station DATEI` | Stationsdaten für das PDF (Standard: `~/.config/wavelog-qsl-convert/qsl_station.ini`, sonst `qsl_station.ini` neben dem Script) |
